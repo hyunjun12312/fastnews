@@ -257,7 +257,7 @@ async function backfillArticleImages() {
   if (fixed > 0) {
     // 인덱스 페이지 재생성 (이미지 반영)
     const publishedArticles = db.getArticles({ status: 'published', limit: 50 });
-    publisher.updateIndex(publishedArticles, []);
+    publisher.updateIndex(publishedArticles, getRecentTrendKeywords());
     logger.info(`[이미지 백필] ${fixed}/${articlesWithoutImage.length}개 기사 이미지 업데이트 완료`);
     dashboard.emitEvent('log', `🖼️ ${fixed}개 기사 이미지 업데이트 완료`);
   }
@@ -342,7 +342,7 @@ async function regenerateLowQualityArticles() {
   if (regenerated > 0) {
     // 인덱스 페이지 갱신
     const publishedArticles = db.getArticles({ status: 'published', limit: 50 });
-    publisher.updateIndex(publishedArticles, []);
+    publisher.updateIndex(publishedArticles, getRecentTrendKeywords());
     logger.info(`[재생성] ${regenerated}/${lowQuality.length}개 기사 재생성 완료`);
     dashboard.emitEvent('log', `🔄 ${regenerated}개 기사 재생성 완료`);
   }
@@ -397,7 +397,7 @@ async function start() {
   // 1.5 기본 인덱스 페이지 즉시 생성 (서버 시작 직후 404 방지)
   try {
     const existingArticles = db.getArticles({ status: 'published', limit: 50 });
-    publisher.updateIndex(existingArticles, []);
+    publisher.updateIndex(existingArticles, getRecentTrendKeywords());
     logger.info(`[시작] 기본 인덱스 생성 완료 (기존 기사 ${existingArticles.length}개)`);
   } catch (e) {
     logger.warn(`[시작] 기본 인덱스 생성 실패: ${e.message}`);
