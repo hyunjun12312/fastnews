@@ -201,6 +201,40 @@ function hasArticleForKeyword(keyword) {
   return row && row.cnt > 0;
 }
 
+// 저품질 기사 감지 (리젠 대상)
+function getLowQualityArticles(limit = 10) {
+  return queryAll(
+    `SELECT * FROM articles WHERE status = 'published' AND (
+      title LIKE '%현재 주요 이슈 총정리%'
+      OR summary LIKE '%종합 분석했습니다%'
+      OR summary LIKE '%종합 분석했습니다%'
+      OR title LIKE '%총정리'
+      OR content LIKE '%주요 보도 내용 종합%'
+      OR length(content) < 200
+    ) ORDER BY created_at DESC LIMIT ?`,
+    [limit]
+  );
+}
+
+// 기사 내용 업데이트 (재생성용)
+function updateArticle(id, { title, content, summary, image, slug }) {
+  const fields = [];
+  const params = [];
+  if (title !== undefined) { fields.push('title = ?'); params.push(title); }
+  if (content !== undefined) { fields.push('content = ?'); params.push(content); }
+  if (summary !== undefined) { fields.push('summary = ?'); params.push(summary); }
+  if (image !== undefined) { fields.push('image = ?'); params.push(image); }
+  if (slug !== undefined) { fields.push('slug = ?'); params.push(slug); }
+  if (fields.length === 0) return { changes: 0 };
+  params.push(id);
+  return runSql(`UPDATE articles SET ${fields.join(', ')} WHERE id = ?`, params);
+}
+
+// 키워드 정제된 값으로 업데이트
+function updateArticleKeyword(id, keyword) {
+  return runSql('UPDATE articles SET keyword = ? WHERE id = ?', [keyword, id]);
+}
+
 function updateArticleImage(id, image) {
   return runSql('UPDATE articles SET image = ? WHERE id = ?', [image, id]);
 }
@@ -230,5 +264,6 @@ module.exports = {
   getRecentKeywords, isKeywordRecent, insertArticle, getArticles, getArticleBySlug,
   getArticleById, incrementViews, getArticleCount, getTodayArticleCount,
   hasArticleForKeyword, updateArticleImage, getArticlesWithoutImage,
+  getLowQualityArticles, updateArticle, updateArticleKeyword,
   logCrawl, getStats, saveToDisk,
 };

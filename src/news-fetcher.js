@@ -72,7 +72,7 @@ async function fetchGoogleNews(keyword, count = 5) {
       const title = titleParts ? titleParts[1].trim() : rawTitle;
       const sourceName = titleParts ? titleParts[2].trim() : '';
 
-      // Google News RSS의 description에서 실제 기사 요약 추출
+      // Google News RSS의 description에서 실제 기사 요약 + 이미지 추출
       const rawDesc = $(el).find('description').text().trim();
       const descHtml = cheerio.load(rawDesc);
       // description에 <a> 태그 안에 실제 링크가 있을 수 있음
@@ -84,7 +84,22 @@ async function fetchGoogleNews(keyword, count = 5) {
           return false;
         }
       });
+      // description HTML에서 이미지 추출
+      let descImage = '';
+      descHtml('img').each((_, img) => {
+        const src = descHtml(img).attr('src');
+        if (src && src.startsWith('http') && !descImage) {
+          descImage = src;
+        }
+      });
       const description = descHtml.text().replace(/<[^>]*>/g, '').trim();
+
+      // media:content, enclosure 태그에서 이미지 추출
+      let mediaImage = '';
+      const mediaContent = $(el).find('media\\:content, content').attr('url') || '';
+      const enclosure = $(el).find('enclosure').attr('url') || '';
+      const mediaThumbnail = $(el).find('media\\:thumbnail, thumbnail').attr('url') || '';
+      mediaImage = mediaContent || enclosure || mediaThumbnail || descImage || '';
 
       // Google News RSS의 link는 리다이렉트 URL
       const googleLink = $(el).find('link').text().trim();
@@ -96,6 +111,7 @@ async function fetchGoogleNews(keyword, count = 5) {
         pubDate: $(el).find('pubDate').text().trim(),
         source: 'google_news',
         sourceName: sourceName || 'Google News',
+        image: mediaImage,
       });
     });
 
@@ -397,9 +413,14 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
   // 대표 이미지: 가장 먼저 이미지가 있는 기사에서 추출
   let representativeImage = topArticles.find(a => a.image)?.image || '';
 
-  // 이미지가 없으면 네이버 이미지 검색으로 fallback
+  // Google News RSS에서 가져온 이미지도 체크
   if (!representativeImage) {
-    representativeImage = await fetchNaverImageSearch(keyword);
+    representativeImage = uniqueArticles.find(a => a.image)?.image || '';
+  }
+
+  // 이미지가 없으면 다중 fallback 이미지 검색
+  if (!representativeImage) {
+    representativeImage = await searchImageForKeyword(keyword);
   }
 
   logger.info(`[뉴스] "${keyword}": 총 ${uniqueArticles.length}개 기사 수집 (본문 ${topArticles.filter(a => a.fullContent).length}개, 이미지 ${topArticles.filter(a => a.image).length}개, 대표이미지: ${representativeImage ? 'O' : 'X'})`);
@@ -413,138 +434,284 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
   };
 }
 
-// ========== 네이버 이미지 검색 (대표 이미지 fallback) ==========
-async function fetchNaverImageSearch(keyword) {
-  // 방법 1: 네이버 이미지 검색 API
-  try {
-    if (config.naver.clientId && config.naver.clientSecret) {
-      const response = await axios.get('https://openapi.naver.com/v1/search/image', {
-        params: {
-          query: keyword,
-          display: 5,
-          sort: 'date',
-          filter: 'large',
-        },
-        headers: {
-          'X-Naver-Client-Id': config.naver.clientId,
-          'X-Naver-Client-Secret': config.naver.clientSecret,
-        },
-        timeout: 10000,
-      });
+// ========== 이미지 검색 (다중 소스 fallback) ==========
+async function searchImageForKeyword(keyword) {
+  // 방법 1: 네이버 이미지 검색 API (API 키가 이미지 검색 권한 있을 때)
+  const img1 = await tryNaverImageAPI(keyword);
+  if (img1) return img1;
 
-      const items = response.data?.items || [];
-      for (const item of items) {
-        const img = item.link || item.thumbnail;
-        if (img && img.startsWith('http') && !img.includes('logo') && !img.includes('icon')) {
-          logger.info(`[뉴스] 네이버 이미지API "${keyword}": 이미지 확보`);
-          return img;
-        }
-      }
-    }
-  } catch (error) {
-    logger.debug(`[뉴스] 네이버 이미지API 실패: ${error.message}`);
-  }
+  // 방법 2: Bing 이미지 검색 크롤링 (미국 서버에서도 잘 동작)
+  const img2 = await tryBingImageSearch(keyword);
+  if (img2) return img2;
 
-  // 방법 2: 네이버 뉴스 검색 페이지에서 썸네일 크롤링
+  // 방법 3: DuckDuckGo 이미지 검색 (차단 거의 없음)
+  const img3 = await tryDuckDuckGoImage(keyword);
+  if (img3) return img3;
+
+  // 방법 4: Google 이미지 검색 크롤링
+  const img4 = await tryGoogleImageSearch(keyword);
+  if (img4) return img4;
+
+  // 방법 5: 네이버 뉴스 페이지 썸네일 (차단될 수 있지만 시도)
+  const img5 = await tryNaverNewsThumbnail(keyword);
+  if (img5) return img5;
+
+  logger.warn(`[이미지] "${keyword}": 모든 소스에서 이미지를 찾지 못함`);
+  return '';
+}
+
+// ----- 방법 1: 네이버 이미지 API -----
+async function tryNaverImageAPI(keyword) {
   try {
-    const url = `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(keyword)}&sort=1`;
-    const response = await axios.get(url, {
-      headers: HEADERS,
-      timeout: 10000,
+    if (!config.naver.clientId || !config.naver.clientSecret) return '';
+    const response = await axios.get('https://openapi.naver.com/v1/search/image', {
+      params: { query: keyword, display: 5, sort: 'date', filter: 'large' },
+      headers: {
+        'X-Naver-Client-Id': config.naver.clientId,
+        'X-Naver-Client-Secret': config.naver.clientSecret,
+      },
+      timeout: 8000,
     });
-
-    const $ = cheerio.load(response.data);
-
-    // 뉴스 검색 결과의 썸네일 이미지
-    const imgSelectors = [
-      '.news_wrap img.thumb',
-      '.api_ani_send img',
-      '.news_area img',
-      '.dsc_thumb img',
-      'img.thumb_area',
-      '.news_contents img',
-      'img[data-lazysrc]',
-      '.thumb_box img',
-    ];
-
-    for (const sel of imgSelectors) {
-      const found = [];
-      $(sel).each((i, el) => {
-        const src = $(el).attr('data-lazysrc') || $(el).attr('data-src') || $(el).attr('src');
-        if (src) found.push(src);
-      });
-      for (let img of found) {
-        img = img.trim();
-        if (img.startsWith('//')) img = 'https:' + img;
-        if (img.startsWith('data:')) continue;
-        if (img.includes('logo') || img.includes('icon') || img.includes('favicon')) continue;
-        if (img.includes('1x1') || img.includes('pixel') || img.includes('blank.gif')) continue;
-        // 네이버 썸네일 → 고해상도로 변환
-        if (img.includes('pstatic.net') || img.includes('naver.net')) {
-          img = img.replace(/\/dimthumbnail\/\d+x\d+_\d+_\d+\//, '/');
-          img = img.replace(/\?type=\w+/, '?type=w800');
-          img = img.replace(/type=nf\d+_\d+/, 'type=w800');
-          img = img.replace(/type=a\d+/, 'type=w800');
-          img = img.replace(/type=ff\d+_\d+/, 'type=w800');
-        }
-        if (img.startsWith('http')) {
-          logger.info(`[뉴스] 네이버 뉴스썸네일 "${keyword}": 이미지 확보`);
-          return img;
-        }
+    const items = response.data?.items || [];
+    for (const item of items) {
+      const img = item.link || item.thumbnail;
+      if (img && img.startsWith('http') && !isJunkImage(img)) {
+        logger.info(`[이미지] 네이버API "${keyword}": 확보 ✓`);
+        return img;
       }
     }
   } catch (error) {
-    logger.debug(`[뉴스] 네이버 뉴스 썸네일 크롤링 실패: ${error.message}`);
+    logger.debug(`[이미지] 네이버API 실패: ${error.response?.status || error.message}`);
   }
+  return '';
+}
 
-  // 방법 3: 네이버 모바일 이미지 검색 크롤링 (API 키 없어도 가능)
+// ----- 방법 2: Bing 이미지 검색 -----
+async function tryBingImageSearch(keyword) {
   try {
-    const url = `https://m.search.naver.com/search.naver?where=m_image&query=${encodeURIComponent(keyword)}&sort=1`;
+    const url = `https://www.bing.com/images/search?q=${encodeURIComponent(keyword + ' 뉴스')}&qft=+filterui:photo-photo&first=1`;
     const response = await axios.get(url, {
       headers: {
-        ...HEADERS,
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
       },
       timeout: 10000,
     });
 
     const $ = cheerio.load(response.data);
+
+    // Bing 이미지 결과에서 이미지 URL 추출
+    // 방법 A: m 속성 (JSON 데이터)
+    const mAttrs = [];
+    $('a.iusc').each((i, el) => {
+      if (i >= 5) return false;
+      const m = $(el).attr('m');
+      if (m) mAttrs.push(m);
+    });
+    for (const m of mAttrs) {
+      try {
+        const data = JSON.parse(m);
+        const img = data.murl || data.turl;
+        if (img && img.startsWith('http') && !isJunkImage(img)) {
+          logger.info(`[이미지] Bing "${keyword}": 확보 ✓`);
+          return img;
+        }
+      } catch {}
+    }
+
+    // 방법 B: img.mimg 태그
+    $('img.mimg, img.rms_img').each((i, el) => {
+      if (i >= 5) return false;
+      const src = $(el).attr('src') || $(el).attr('data-src');
+      if (src && src.startsWith('http') && !isJunkImage(src) && src.length > 50) {
+        logger.info(`[이미지] Bing img "${keyword}": 확보 ✓`);
+        return src;
+      }
+    });
+
+    // 방법 C: data-src2 속성
+    let found = '';
+    $('img[data-src2]').each((i, el) => {
+      if (found || i >= 5) return false;
+      const src = $(el).attr('data-src2');
+      if (src && src.startsWith('http') && !isJunkImage(src)) {
+        found = src;
+      }
+    });
+    if (found) {
+      logger.info(`[이미지] Bing data-src2 "${keyword}": 확보 ✓`);
+      return found;
+    }
+
+  } catch (error) {
+    logger.debug(`[이미지] Bing 검색 실패: ${error.message}`);
+  }
+  return '';
+}
+
+// ----- 방법 3: DuckDuckGo 이미지 -----
+async function tryDuckDuckGoImage(keyword) {
+  try {
+    // DuckDuckGo vqd 토큰 가져오기
+    const tokenRes = await axios.get(`https://duckduckgo.com/?q=${encodeURIComponent(keyword)}&iax=images&ia=images`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      timeout: 8000,
+    });
+
+    const vqdMatch = tokenRes.data.match(/vqd=["']?([^"'&]+)/);
+    if (!vqdMatch) {
+      // HTML에서 직접 이미지 추출 시도
+      const $ = cheerio.load(tokenRes.data);
+      let found = '';
+      $('img').each((i, el) => {
+        if (found || i > 30) return false;
+        const src = $(el).attr('src') || $(el).attr('data-src');
+        if (src && src.startsWith('http') && !isJunkImage(src) && src.length > 50) {
+          found = src;
+        }
+      });
+      if (found) {
+        logger.info(`[이미지] DuckDuckGo HTML "${keyword}": 확보 ✓`);
+        return found;
+      }
+      return '';
+    }
+
+    const vqd = vqdMatch[1];
+    const imgRes = await axios.get('https://duckduckgo.com/i.js', {
+      params: {
+        l: 'kr-kr',
+        o: 'json',
+        q: keyword,
+        vqd,
+        f: ',,,,,',
+        p: '1',
+      },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://duckduckgo.com/',
+      },
+      timeout: 8000,
+    });
+
+    const results = imgRes.data?.results || [];
+    for (const r of results.slice(0, 5)) {
+      const img = r.image || r.thumbnail;
+      if (img && img.startsWith('http') && !isJunkImage(img)) {
+        logger.info(`[이미지] DuckDuckGo "${keyword}": 확보 ✓`);
+        return img;
+      }
+    }
+  } catch (error) {
+    logger.debug(`[이미지] DuckDuckGo 실패: ${error.message}`);
+  }
+  return '';
+}
+
+// ----- 방법 4: Google 이미지 검색 -----
+async function tryGoogleImageSearch(keyword) {
+  try {
+    const url = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&tbm=isch&hl=ko`;
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+      },
+      timeout: 10000,
+    });
+
+    // Google 이미지 검색 결과에서 이미지 URL 추출 (JSON 데이터 내)
+    const imgMatches = response.data.match(/\["(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)",\d+,\d+\]/gi) || [];
+    for (const match of imgMatches.slice(0, 10)) {
+      const urlMatch = match.match(/\["(https?:\/\/[^"]+)"/);
+      if (urlMatch) {
+        const img = urlMatch[1];
+        if (!isJunkImage(img) && !img.includes('gstatic.com') && !img.includes('google.com')) {
+          logger.info(`[이미지] Google "${keyword}": 확보 ✓`);
+          return img;
+        }
+      }
+    }
+
+    // data:image 제외하고 og:image 등 meta에서 추출
+    const $ = cheerio.load(response.data);
+    let found = '';
+    $('img').each((i, el) => {
+      if (found || i > 30) return false;
+      const src = $(el).attr('src') || $(el).attr('data-src');
+      if (!src || src.startsWith('data:') || src.length < 30) return;
+      if (src.startsWith('http') && !isJunkImage(src) && !src.includes('gstatic') && !src.includes('google.com/images')) {
+        found = src;
+      }
+    });
+    if (found) {
+      logger.info(`[이미지] Google img "${keyword}": 확보 ✓`);
+      return found;
+    }
+
+  } catch (error) {
+    logger.debug(`[이미지] Google 이미지 실패: ${error.message}`);
+  }
+  return '';
+}
+
+// ----- 방법 5: 네이버 뉴스 썸네일 -----
+async function tryNaverNewsThumbnail(keyword) {
+  try {
+    const url = `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(keyword)}&sort=1`;
+    const response = await axios.get(url, {
+      headers: HEADERS,
+      timeout: 8000,
+    });
+
+    const $ = cheerio.load(response.data);
     let found = '';
 
-    // 모바일 이미지 검색 결과
+    // 네이버 뉴스 검색 결과 모든 이미지
     $('img').each((i, el) => {
-      if (found || i > 20) return false;
-      const src = $(el).attr('data-source') || $(el).attr('data-lazysrc') || $(el).attr('data-src') || $(el).attr('src');
+      if (found || i > 50) return false;
+      const src = $(el).attr('data-lazysrc') || $(el).attr('data-src') || $(el).attr('src');
       if (!src) return;
       let img = src.trim();
       if (img.startsWith('//')) img = 'https:' + img;
-      if (img.startsWith('data:') || img.length < 30) return;
-      if (img.includes('logo') || img.includes('icon') || img.includes('favicon')) return;
-      if (img.includes('1x1') || img.includes('pixel') || img.includes('blank')) return;
-      if (img.includes('search_') || img.includes('btn_') || img.includes('sp_')) return;
-      // 실제 이미지 URL만 (일정 크기 이상)
-      const width = parseInt($(el).attr('width') || '0');
-      const height = parseInt($(el).attr('height') || '0');
-      if ((width > 0 && width < 50) || (height > 0 && height < 50)) return;
+      if (img.startsWith('data:') || img.length < 40) return;
+      if (isJunkImage(img)) return;
+      // 네이버 썸네일 → 고해상도
+      if (img.includes('pstatic.net') || img.includes('naver.net')) {
+        img = img.replace(/\?type=\w+/, '?type=w800');
+        img = img.replace(/type=nf\d+_\d+/, 'type=w800');
+        img = img.replace(/type=a\d+/, 'type=w800');
+      }
       if (img.startsWith('http')) {
         found = img;
       }
     });
 
     if (found) {
-      // 네이버 이미지 → 고해상도
-      if (found.includes('pstatic.net') || found.includes('naver.net')) {
-        found = found.replace(/\?type=\w+/, '?type=w800');
-      }
-      logger.info(`[뉴스] 네이버 모바일이미지 "${keyword}": 이미지 확보`);
+      logger.info(`[이미지] 네이버뉴스 "${keyword}": 확보 ✓`);
       return found;
     }
   } catch (error) {
-    logger.debug(`[뉴스] 네이버 모바일 이미지 크롤링 실패: ${error.message}`);
+    logger.debug(`[이미지] 네이버뉴스 썸네일 실패: ${error.message}`);
   }
-
-  logger.warn(`[뉴스] "${keyword}": 이미지를 찾지 못함`);
   return '';
+}
+
+// ========== 정크 이미지 필터 ==========
+function isJunkImage(url) {
+  if (!url) return true;
+  const junk = [
+    'logo', 'icon', 'favicon', '1x1', 'pixel', 'blank', 'spacer',
+    'btn_', 'button', 'banner_ad', 'sprite', 'arrow', 'search_',
+    'sp_', 'transparent', 'loading', 'spinner', 'placeholder',
+    'ad_', 'ads_', 'tracking', 'analytics', 'widget',
+  ];
+  const lower = url.toLowerCase();
+  return junk.some(j => lower.includes(j));
 }
 
 module.exports = {
@@ -553,5 +720,5 @@ module.exports = {
   fetchNaverSearchNews,
   fetchArticleContent,
   fetchNewsForKeyword,
-  fetchNaverImageSearch,
+  searchImageForKeyword,
 };

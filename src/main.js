@@ -208,7 +208,7 @@ async function backfillArticleImages() {
   let fixed = 0;
   for (const article of articlesWithoutImage) {
     try {
-      const image = await newsFetcher.fetchNaverImageSearch(article.keyword);
+      const image = await newsFetcher.searchImageForKeyword(article.keyword);
       if (image) {
         db.updateArticleImage(article.id, image);
         fixed++;
