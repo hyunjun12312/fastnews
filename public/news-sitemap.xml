@@ -3,6 +3,28 @@
         xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
 
   <url>
+    <loc>https://www.wordmoa.com/articles/%EC%82%AC%EC%A7%81%EC%84%9C-%EB%82%B4%EC%9E%90-%EC%B6%A9%EC%A3%BC%EB%A7%A8-%EC%95%94%EC%A0%81-%EC%A1%B4%EC%9E%AC%EC%B6%A9%EC%A3%BC%EC%8B%9C-%EC%9C%A0%ED%8A%9C%EB%B8%8C-%ED%9B%84%ED%8F%AD%ED%92%8D-1771146912412.html</loc>
+    <news:news>
+      <news:publication>
+        <news:name>트렌드 뉴스</news:name>
+        <news:language>ko</news:language>
+      </news:publication>
+      <news:publication_date>2026-02-15T09:15:12+00:00</news:publication_date>
+      <news:title>사직서 내자 &quot;충주맨 암적 존재&quot;…충주시 유튜브 후폭풍</news:title>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://www.wordmoa.com/articles/%EB%A5%B4%ED%8F%AC%EC%84%A4-%EC%97%B0%ED%9C%B4%EC%97%90%EB%8F%84-%EB%B6%88-%EC%BC%9C%EC%A7%84-%EB%B9%84%EB%8B%90%ED%95%98%EC%9A%B0%EC%8A%A4%EA%B3%A0%EB%90%9C-%EB%A7%88%EC%95%BC%EC%9D%98-%ED%83%80%EA%B5%AD-%EB%AA%85%EC%A0%88-1771146905602.html</loc>
+    <news:news>
+      <news:publication>
+        <news:name>트렌드 뉴스</news:name>
+        <news:language>ko</news:language>
+      </news:publication>
+      <news:publication_date>2026-02-15T09:15:05+00:00</news:publication_date>
+      <news:title>[르포]설 연휴에도 불 켜진 비닐하우스…고된 &#039;마야&#039;의 타국 명절</news:title>
+    </news:news>
+  </url>
+  <url>
     <loc>https://www.wordmoa.com/articles/%EB%B0%95%EB%B3%B4%EA%B2%80-%EC%9E%A5%EC%9B%90%EC%98%81-%EB%A8%B8%EB%A6%AC%EB%8F%84-%EA%B0%80%EB%8A%A5%EB%A7%88%EC%9D%8C%EC%97%90-%EB%93%A4%EC%96%B4-%EC%86%90%EB%8B%98-%EB%A7%8C%EC%A1%B1%EB%8F%84-100-%EB%B3%B4%EA%B2%80%EB%A7%A4%EC%A7%81%EC%BB%AC-1771146538508.html</loc>
     <news:news>
       <news:publication>
