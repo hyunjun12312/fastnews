@@ -250,6 +250,9 @@ function deleteArticlesWithGarbageKeywords() {
     '확인', '공개', '발표', '논란', '화제', '무소속', '감봉', '정당',
     '반대', '비판', '의혹', '상황', '사건', '결과', '영향', '문제',
     '반려견놀', '비키니', '낚싯바늘', '삶과 죽음',
+    '이들', '피해자', '오른', '연속', '여자도', '홍보전', '나선', '전면에',
+    '표명', '유감', '눈물', '유럽', 'Naver', 'naver', '중소기업의 눈물',
+    '바닥론', '소속', '돌연', '결국', '사실',
   ];
   const placeholders = garbageKeywords.map(() => '?').join(',');
   const result1 = runSql(`DELETE FROM articles WHERE keyword IN (${placeholders})`, garbageKeywords);
