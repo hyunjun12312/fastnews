@@ -668,12 +668,12 @@ function headerHTML() {
   <nav class="nav-bar">
     <div class="nav-inner">
       <a class="nav-link active" href="/">홈</a>
-      <a class="nav-link" href="/">속보</a>
-      <a class="nav-link" href="/">사회</a>
-      <a class="nav-link" href="/">경제</a>
-      <a class="nav-link" href="/">연예</a>
-      <a class="nav-link" href="/">스포츠</a>
-      <a class="nav-link" href="/">IT·과학</a>
+      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EC%86%8D%EB%B3%B4&sort=1" target="_blank" rel="noopener">속보</a>
+      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EC%82%AC%ED%9A%8C&sort=1" target="_blank" rel="noopener">사회</a>
+      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EA%B2%BD%EC%A0%9C&sort=1" target="_blank" rel="noopener">경제</a>
+      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EC%97%B0%EC%98%88&sort=1" target="_blank" rel="noopener">연예</a>
+      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EC%8A%A4%ED%8F%AC%EC%B8%A0&sort=1" target="_blank" rel="noopener">스포츠</a>
+      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=IT%C2%B7%EA%B3%BC%ED%95%99&sort=1" target="_blank" rel="noopener">IT·과학</a>
     </div>
   </nav>`;
 }
