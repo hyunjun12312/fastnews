@@ -41,6 +41,9 @@ module.exports = {
     description: process.env.SITE_DESCRIPTION || '실시간 트렌드 뉴스 자동 발행',
   },
 
+  // 영구 저장소 (Railway Volume)
+  dataDir: process.env.DATA_DIR || '',  // 비어있으면 기본 경로 사용
+
   // 로그
   logLevel: process.env.LOG_LEVEL || 'info',
 };

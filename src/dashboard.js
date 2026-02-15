@@ -19,6 +19,13 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.json());
+
+// Railway Volume 지원: DATA_DIR이 설정되면 해당 경로를 우선 서빙
+const DATA_DIR = process.env.DATA_DIR || '';
+if (DATA_DIR) {
+  app.use(express.static(DATA_DIR));
+  logger.info(`[대시보드] 영구 저장소 서빙: ${DATA_DIR}`);
+}
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ========== 대시보드 페이지 ==========

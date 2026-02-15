@@ -6,12 +6,14 @@ const path = require('path');
 const fs = require('fs');
 const logger = require('./logger');
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'trending.db');
+// Railway Volume 지원: DATA_DIR 환경변수 설정 시 영구 저장소 사용
+const DATA_DIR = process.env.DATA_DIR || '';
+const DB_DIR = DATA_DIR || path.join(__dirname, '..', 'data');
+const DB_PATH = path.join(DB_DIR, 'trending.db');
 
 // data 폴더 생성
-const dataDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(DB_DIR)) {
+  fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
 let db = null;

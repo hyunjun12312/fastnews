@@ -7,12 +7,17 @@ const { marked } = require('marked');
 const logger = require('./logger');
 const config = require('./config');
 
-const OUTPUT_DIR = path.join(__dirname, '..', 'public');
+// Railway Volume 지원: DATA_DIR 환경변수 설정 시 영구 저장소 사용
+const DATA_DIR = process.env.DATA_DIR || '';
+const OUTPUT_DIR = DATA_DIR ? DATA_DIR : path.join(__dirname, '..', 'public');
 const ARTICLES_DIR = path.join(OUTPUT_DIR, 'articles');
+const SITEMAP_DIR = path.join(OUTPUT_DIR, 'sitemap');
 
-[OUTPUT_DIR, ARTICLES_DIR].forEach(dir => {
+[OUTPUT_DIR, ARTICLES_DIR, SITEMAP_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
+
+logger.info(`[퍼블리셔] 출력 디렉토리: ${OUTPUT_DIR} ${DATA_DIR ? '(Railway Volume)' : '(로컬)'}`);
 
 function escapeHtml(text) {
   if (!text) return '';
@@ -664,7 +669,8 @@ function indexTemplate(articles, trendKeywords) {
 }
 
 // ========== 사이트맵 ==========
-function generateSitemap(articles, baseUrl = 'https://yourdomain.com') {
+function generateSitemap(articles, baseUrl = '') {
+  if (!baseUrl) baseUrl = process.env.SITE_URL || 'https://fastnews-production.up.railway.app';
   const urls = articles.map(a => `
   <url>
     <loc>${baseUrl}/articles/${a.slug}.html</loc>
@@ -685,7 +691,8 @@ function generateSitemap(articles, baseUrl = 'https://yourdomain.com') {
 }
 
 // ========== Google News 사이트맵 ==========
-function generateNewsSitemap(articles, baseUrl = 'https://yourdomain.com') {
+function generateNewsSitemap(articles, baseUrl = '') {
+  if (!baseUrl) baseUrl = process.env.SITE_URL || 'https://fastnews-production.up.railway.app';
   const recentArticles = articles.filter(a => {
     const d = new Date(a.published_at || a.created_at);
     return (Date.now() - d.getTime()) < 48 * 3600000; // 48시간 이내
@@ -713,7 +720,8 @@ ${urls}
 }
 
 // ========== RSS ==========
-function generateRSS(articles, baseUrl = 'https://yourdomain.com') {
+function generateRSS(articles, baseUrl = '') {
+  if (!baseUrl) baseUrl = process.env.SITE_URL || 'https://fastnews-production.up.railway.app';
   const items = articles.slice(0, 50).map(a => `
     <item>
       <title><![CDATA[${a.title}]]></title>
@@ -739,7 +747,8 @@ function generateRSS(articles, baseUrl = 'https://yourdomain.com') {
 }
 
 // ========== robots.txt ==========
-function generateRobotsTxt(baseUrl = 'https://yourdomain.com') {
+function generateRobotsTxt(baseUrl = '') {
+  if (!baseUrl) baseUrl = process.env.SITE_URL || 'https://fastnews-production.up.railway.app';
   return `User-agent: *
 Allow: /
 
