@@ -227,7 +227,11 @@ async function runPipeline() {
 }
 
 // ========== 이미지 백필 (기존 기사에 이미지 추가) ==========
+// 비활성화: Bing/Google 이미지 검색은 무관한 이미지(클릭베이트)를 가져오므로 사용하지 않음
+// 뉴스 기사 크롤링 시 og:image가 없으면 이미지 없이 발행하는 것이 낫다
 async function backfillArticleImages() {
+  logger.info('[이미지 백필] 비활성화됨 (이미지 검색은 무관한 이미지를 가져와 품질 저하)');
+  return;
   const articlesWithoutImage = db.getArticlesWithoutImage(20);
   if (articlesWithoutImage.length === 0) {
     logger.info('[이미지 백필] 이미지 없는 기사 없음');

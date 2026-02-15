@@ -249,6 +249,7 @@ function deleteArticlesWithGarbageKeywords() {
     '한국인', '외국인', '국내', '해외', '정부', '국회', '여당', '야당',
     '확인', '공개', '발표', '논란', '화제', '무소속', '감봉', '정당',
     '반대', '비판', '의혹', '상황', '사건', '결과', '영향', '문제',
+    '반려견놀', '비키니', '낚싯바늘', '삶과 죽음',
   ];
   const placeholders = garbageKeywords.map(() => '?').join(',');
   const result1 = runSql(`DELETE FROM articles WHERE keyword IN (${placeholders})`, garbageKeywords);

@@ -57,6 +57,8 @@ const KEYWORD_STOPWORDS = new Set([
   '국내', '국외', '해외', '전국', '전역', '일대', '인근', '주변',
   // === 연결어/접속어 ===
   '그리고', '하지만', '그래서', '그러나', '그런데', '따라서', '또한', '비록',
+  // === 잘린/불완전 단어 ===
+  '반려견놀', '낚싯바늘', '비키니',
 ]);
 
 // 한국 성씨 목록 (인명 추출 정확도 향상)
@@ -103,6 +105,33 @@ function isGoodKeyword(keyword) {
 
   // '~에서', '~으로', '~에게' 등 조사로 끝나는 단어 (1단어)
   if (words.length === 1 && /(?:에서|으로|에게|부터|까지|처럼|만큼|대로|보다|같이|밖에|마저|조차)$/.test(keyword)) return false;
+
+  // 잘린 단어 감지: 동사 어간으로 끝나는 4글자+ 조합어
+  // "반려견놀" → "놀이"에서 잘림. 하지만 "마동석", "배현진"은 정상 인명
+  // 해결: 조합어 패턴만 차단 (한글+한자어근+동사어간)
+  if (words.length === 1 && keyword.length >= 4) {
+    // 끝이 ㄹ받침 동사어간: 놀, 갈, 볼, 할 등 (하지만 "서울"은 OK → 불용어로 이미 차단)
+    const lastChar = keyword[keyword.length - 1];
+    const lastCharCode = lastChar.charCodeAt(0);
+    // 한글 유니코드: (code - 0xAC00) % 28 = 종성 인덱스, 8=ㄹ
+    if (lastCharCode >= 0xAC00 && lastCharCode <= 0xD7A3) {
+      const jongseong = (lastCharCode - 0xAC00) % 28;
+      // ㄹ받침(8)으로 끝나고 앞부분이 명사 느낌이면 잘린 단어
+      if (jongseong === 8 && keyword.length >= 4) {
+        // "반려견놀", "산책놀" 같은 패턴 차단 (복합어+ㄹ받침 동사어간)
+        const prefix = keyword.slice(0, -1);
+        if (prefix.length >= 3) return false;
+      }
+    }
+  }
+
+  // 조사 포함 패턴 (1단어): "삶과", "죽음의" 등
+  if (words.length === 1 && /(?:[과와]|[의을를이가은는에도만서])$/.test(keyword) && keyword.length >= 4) {
+    // 단, 고유명사는 통과 ("코르티스" 같은 외래어는 OK... 아 근데 이것도 쓰레기였음)
+    // 한글 단어에 조사가 붙은 형태만 차단
+    const withoutJosa = keyword.replace(/[과와의을를이가은는에도만서]$/, '');
+    if (KEYWORD_STOPWORDS.has(withoutJosa)) return false;
+  }
 
   return true;
 }
