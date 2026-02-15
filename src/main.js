@@ -82,7 +82,7 @@ async function runPipeline() {
       if (!kw.keyword || kw.keyword.length < 2) continue;
 
       // 키워드 품질 2차 검증 (크롤러에서 누락된 쓰레기 차단)
-      if (kw.keyword.length > 15) continue;
+      if (kw.keyword.length > 25) continue;
       if (/['\"''""」]/.test(kw.keyword)) continue;
       if (/(?:까지|에서|으로|에게|부터|라는|라고|하는|되는|있는|없는)$/.test(kw.keyword)) continue;
 

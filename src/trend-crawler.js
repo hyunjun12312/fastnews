@@ -37,17 +37,13 @@ const KEYWORD_STOPWORDS = new Set([
   '우승', '패배', '승리', '도전', '경쟁', '대결', '선발', '교체', '투입', '합류', '응원',
   '투기', '발생', '해결', '처리', '추진', '변경', '이동', '설치', '운영', '폐쇄', '부상',
   '출발', '도착', '통과', '중지', '개방', '차단', '허용', '금지', '위반', '적발',
-  // 일반 명사 (국가/도시/정치)
-  '미국', '중국', '일본', '한국', '북한', '러시아', '유럽', '영국', '독일', '프랑스',
-  '이탈리아', '스페인', '캐나다', '호주', '인도', '브라질', '멕시코', '터키',
-  '정부', '대통령', '국회', '여당', '야당', '의원', '장관', '대표', '위원', '후보',
-  '경찰', '검찰', '법원', '재판', '수사', '기소', '구속', '석방', '체포', '혐의',
+  // 일반 명사 (단독으로 검색어 부적합한 것만)
+  '정부', '국회', '여당', '야당', '의원', '장관', '위원',
   '세대', '자연', '사회', '경제', '문화', '교육', '과학', '기술', '환경', '건강',
   '생활', '가족', '부모', '자녀', '학생', '교사', '직원', '시민', '국민', '주민',
   '시장', '가격', '비용', '수익', '매출', '투자', '금리', '물가', '임금', '연봉',
   '한국인', '외국인', '남성', '여성', '청년', '노인', '어린이', '청소년', '성인',
   '회사', '기업', '단체', '기관', '부서', '팀', '조직', '센터', '본부',
-  '서울', '부산', '대구', '인천', '광주', '대전', '울산', '제주',
   // 부사/관형/대명사
   '많이', '매우', '정말', '진짜', '너무', '거의', '계속', '다시', '모두', '역시',
   '아직', '이미', '바로', '무슨', '어떤', '이런', '그런', '무려', '겨우', '드디어',
@@ -77,7 +73,7 @@ const KEYWORD_STOPWORDS = new Set([
   '나라', '이웃', '오빠', '언니', '동생', '형', '공항', '변호사', '의사', '교수', '판사',
   '자기야', '주인공', '조상님', '충남도', '경기도', '전남도', '전북도', '경남도', '경북도',
   '생활양식', '제사상', '그들', '여야', '뛰노', '이틀', '사흘', '며칠',
-  '금하지', '파산까지', '충주시', '전국', '세계', '역사', '미래',
+  '금하지', '파산까지', '전국', '세계', '역사', '미래',
   '설날', '추석', '명절', '연휴', '귀성', '정체', '극심',
   // 감정/상태
   '행복', '슬픔', '분노', '기쁨', '걱정', '불안', '두려움',
@@ -89,20 +85,22 @@ const KEYWORD_STOPWORDS = new Set([
 // 키워드 품질 검증
 function isGoodKeyword(keyword) {
   if (!keyword || keyword.length < 2) return false;
-  if (keyword.length > 15) return false;
-
-  // 불용어 체크 (대소문자 무시)
-  if (KEYWORD_STOPWORDS.has(keyword)) return false;
-  if (KEYWORD_STOPWORDS.has(keyword.toLowerCase())) return false;
+  if (keyword.length > 25) return false;
 
   const words = keyword.split(/\s+/);
 
-  // 3단어 이상 → 문장
-  if (words.length >= 3) return false;
+  // 5단어 이상 → 문장 (실검은 보통 1~4단어)
+  if (words.length >= 5) return false;
 
-  // 2단어: 불용어 포함 시 차단
-  if (words.length === 2) {
-    if (words.some(w => KEYWORD_STOPWORDS.has(w) || KEYWORD_STOPWORDS.has(w.toLowerCase()))) return false;
+  // 1단어: 불용어면 차단
+  if (words.length === 1) {
+    if (KEYWORD_STOPWORDS.has(keyword) || KEYWORD_STOPWORDS.has(keyword.toLowerCase())) return false;
+  }
+
+  // 2~4단어: 모든 단어가 불용어이면 차단 (하나라도 고유명사면 통과)
+  if (words.length >= 2) {
+    const allStopwords = words.every(w => KEYWORD_STOPWORDS.has(w) || KEYWORD_STOPWORDS.has(w.toLowerCase()));
+    if (allStopwords) return false;
   }
 
   // 동사/형용사 어미·활용형
