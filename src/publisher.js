@@ -332,14 +332,22 @@ const COMMON_CSS = `
 `;
 
 // ========== 실시간 트렌드 바 HTML 생성 ==========
-function trendBarHTML(trendKeywords) {
+function trendBarHTML(trendKeywords, articles) {
   if (!trendKeywords || trendKeywords.length === 0) return '';
   
+  // 키워드→기사 매핑
+  const articleMap = {};
+  if (articles) articles.forEach(a => { if (a.keyword) articleMap[a.keyword] = a.slug; });
+
   // 무한 스크롤을 위해 2배로 복제
   const items = [...trendKeywords, ...trendKeywords].map((kw, i) => {
     const rank = (i % trendKeywords.length) + 1;
     const rankClass = rank <= 3 ? 'top3' : 'rest';
-    return `<span class="trend-item"><span class="trend-rank ${rankClass}">${rank}</span><span class="trend-name">${escapeHtml(typeof kw === 'string' ? kw : kw.keyword)}</span></span>`;
+    const keyword = typeof kw === 'string' ? kw : kw.keyword;
+    const slug = articleMap[keyword];
+    const href = slug ? `/articles/${slug}.html` : `https://search.naver.com/search.naver?query=${encodeURIComponent(keyword)}`;
+    const target = slug ? '' : ' target="_blank" rel="noopener"';
+    return `<a class="trend-item" href="${href}"${target} style="text-decoration:none;color:inherit;"><span class="trend-rank ${rankClass}">${rank}</span><span class="trend-name">${escapeHtml(keyword)}</span></a>`;
   }).join('');
 
   return `
@@ -632,7 +640,7 @@ function indexTemplate(articles, trendKeywords) {
 </head>
 <body>
   ${navHTML()}
-  ${trendBarHTML(topKeywords)}
+  ${trendBarHTML(topKeywords, articles)}
 
   <div class="container">
     <div class="main-grid">
