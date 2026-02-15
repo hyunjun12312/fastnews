@@ -209,10 +209,10 @@ async function start() {
   // 설정 확인
   logger.info('===== 시스템 설정 =====');
   logger.info(`크롤링 주기: ${config.crawl.intervalMinutes}분`);
-  logger.info(`AI 모델: ${config.openai.model}`);
+  logger.info(`AI Provider: ${config.ai.provider}`);
   logger.info(`시간당 최대 기사: ${config.article.maxPerHour}개`);
   logger.info(`자동 발행: ${config.article.autoPublish ? 'ON' : 'OFF'}`);
-  logger.info(`OpenAI API: ${config.openai.apiKey ? '설정됨 ✓' : '미설정 (폴백 모드)'}`);
+  logger.info(`AI API: ${config.ai.apiKey ? '설정됨 ✓' : '미설정 (폴백 모드)'}`);
   logger.info(`네이버 API: ${config.naver.clientId ? '설정됨 ✓' : '미설정 (Google만 사용)'}`);
 
   // 1. 대시보드 시작

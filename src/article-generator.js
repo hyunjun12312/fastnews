@@ -9,13 +9,39 @@ const OpenAI = require('openai');
 const config = require('./config');
 const logger = require('./logger');
 
-let openai = null;
+let client = null;
 
-function getOpenAI() {
-  if (!openai && config.openai.apiKey) {
-    openai = new OpenAI({ apiKey: config.openai.apiKey });
+// Provider별 설정
+const PROVIDER_CONFIG = {
+  deepseek: {
+    baseURL: 'https://api.deepseek.com',
+    defaultModel: 'deepseek-chat',
+  },
+  openai: {
+    baseURL: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o-mini',
+  },
+};
+
+function getClient() {
+  if (!client && config.ai.apiKey) {
+    const provider = config.ai.provider || 'deepseek';
+    const providerCfg = PROVIDER_CONFIG[provider] || PROVIDER_CONFIG.deepseek;
+    const baseURL = config.ai.baseUrl || providerCfg.baseURL;
+
+    client = new OpenAI({
+      apiKey: config.ai.apiKey,
+      baseURL,
+    });
+
+    logger.info(`[AI] Provider: ${provider} | Model: ${config.ai.model || providerCfg.defaultModel} | Base: ${baseURL}`);
   }
-  return openai;
+  return client;
+}
+
+function getModel() {
+  const provider = config.ai.provider || 'deepseek';
+  return config.ai.model || (PROVIDER_CONFIG[provider] || PROVIDER_CONFIG.deepseek).defaultModel;
 }
 
 // ========== 슬러그 생성 ==========
@@ -30,10 +56,10 @@ function generateSlug(title) {
 
 // ========== SEO 최적화 기사 생성 ==========
 async function generateArticle(keyword, newsData) {
-  const client = getOpenAI();
+  const aiClient = getClient();
 
-  if (!client) {
-    logger.warn('[AI] OpenAI API 키 미설정, 간단 기사 생성으로 대체');
+  if (!aiClient) {
+    logger.warn('[AI] API 키 미설정, 간단 기사 생성으로 대체');
     return generateFallbackArticle(keyword, newsData);
   }
 
@@ -87,8 +113,8 @@ SUMMARY: (요약)
 CONTENT:
 (본문 마크다운)`;
 
-    const response = await client.chat.completions.create({
-      model: config.openai.model,
+    const response = await aiClient.chat.completions.create({
+      model: getModel(),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },

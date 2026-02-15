@@ -4,10 +4,12 @@
 require('dotenv').config();
 
 module.exports = {
-  // OpenAI
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY || '',
-    model: process.env.AI_MODEL || 'gpt-4o-mini',
+  // AI (OpenAI / DeepSeek)
+  ai: {
+    provider: process.env.AI_PROVIDER || 'deepseek',  // 'openai' 또는 'deepseek'
+    apiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY || '',
+    model: process.env.AI_MODEL || '',  // 비어있으면 provider에 따라 자동 선택
+    baseUrl: process.env.AI_BASE_URL || '',  // 비어있으면 provider에 따라 자동 선택
   },
 
   // 네이버 API
