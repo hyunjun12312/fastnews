@@ -221,6 +221,15 @@ async function start() {
   // 1. 대시보드 시작
   dashboard.startDashboard();
 
+  // 1.5 기본 인덱스 페이지 즉시 생성 (서버 시작 직후 404 방지)
+  try {
+    const existingArticles = db.getArticles({ status: 'published', limit: 50 });
+    publisher.updateIndex(existingArticles, []);
+    logger.info(`[시작] 기본 인덱스 생성 완료 (기존 기사 ${existingArticles.length}개)`);
+  } catch (e) {
+    logger.warn(`[시작] 기본 인덱스 생성 실패: ${e.message}`);
+  }
+
   // 2. 최초 실행
   logger.info('🏁 최초 파이프라인 실행...');
   await runPipeline();
