@@ -193,21 +193,28 @@ function extractImage($, url) {
     $('meta[property="og:image"]').attr('content'),
     $('meta[name="twitter:image"]').attr('content'),
     $('meta[property="og:image:url"]').attr('content'),
+    $('meta[name="twitter:image:src"]').attr('content'),
     $('meta[name="thumbnail"]').attr('content'),
     $('meta[itemprop="image"]').attr('content'),
+    $('link[rel="image_src"]').attr('href'),
   ];
 
-  // 본문 내 큰 이미지 탐색
+  // 본문 내 큰 이미지 탐색 (더 다양한 셀렉터)
   const articleImgSelectors = [
     '#articleBodyContents img', '#newsct_article img',
+    '#dic_area img', '#articeBody img',
     '.article_body img', '.article-body img',
+    '.news_end img', '.view_cont img',
+    '.article_txt img', '#content_body img',
     'article img', '[itemprop="articleBody"] img',
-    '.news_body img', '.view_cont img',
+    '.news_body img', '.post-content img',
+    '#newsEndContents img', '.article_view img',
+    '.detail_body img', '#news_body img',
   ];
 
   for (const sel of articleImgSelectors) {
     $(sel).each((i, el) => {
-      const src = $(el).attr('data-src') || $(el).attr('src');
+      const src = $(el).attr('data-src') || $(el).attr('data-lazy-src') || $(el).attr('data-original') || $(el).attr('src');
       if (src) candidates.push(src);
     });
   }
@@ -226,6 +233,17 @@ function extractImage($, url) {
     // 너무 작은 아이콘/로고 필터링
     if (img.includes('logo') || img.includes('icon') || img.includes('favicon')) continue;
     if (img.includes('1x1') || img.includes('pixel') || img.includes('blank')) continue;
+    if (img.includes('btn_') || img.includes('button') || img.includes('banner_ad')) continue;
+    // base64 데이터 URI 스킵
+    if (img.startsWith('data:')) continue;
+    // Google lh3 이미지 → 고해상도로 변환
+    if (img.includes('lh3.googleusercontent.com') || img.includes('lh4.googleusercontent.com') || img.includes('lh5.googleusercontent.com')) {
+      img = img.replace(/=s\d+-w\d+(-rw)?/, '=s800-w800').replace(/=w\d+(-h\d+)?(-[a-z]+)*/, '=w800');
+    }
+    // 네이버 이미지 → 고해상도로 변환
+    if (img.includes('imgnews.pstatic.net') || img.includes('mimgnews.pstatic.net')) {
+      img = img.replace(/\/dimthumbnail\/\d+x\d+_\d+_\d+\//, '/').replace(/\?type=\w+/, '?type=w800');
+    }
     // 유효한 이미지 URL인지 확인
     if (img.startsWith('http') && /\.(jpg|jpeg|png|webp|gif)/i.test(img) || img.includes('image') || img.includes('img') || img.includes('photo')) {
       return img;

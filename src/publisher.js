@@ -24,6 +24,30 @@ function escapeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
+// ========== 키워드 기반 그라디언트 배경 생성 ==========
+function keywordGradient(keyword) {
+  let hash = 0;
+  const str = keyword || 'trend';
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const gradients = [
+    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+    'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+    'linear-gradient(135deg, #fad0c4 0%, #ffd1ff 100%)',
+    'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+    'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
+    'linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 100%)',
+    'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',
+    'linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)',
+  ];
+  return gradients[Math.abs(hash) % gradients.length];
+}
+
 function formatDate(dateStr) {
   try {
     const d = new Date(dateStr);
@@ -174,9 +198,15 @@ const COMMON_CSS = `
     width: 100%; height: 280px; object-fit: cover; display: block;
   }
   .hero-img-placeholder {
-    width: 100%; height: 200px; background: linear-gradient(135deg, #e8f0fe 0%, #d2e3fc 100%);
+    width: 100%; height: 200px;
     display: flex; align-items: center; justify-content: center;
-    color: var(--accent-blue); font-size: 2.5rem;
+    color: rgba(255,255,255,0.9); font-size: 1.6rem; font-weight: 700;
+    letter-spacing: 1px; text-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    position: relative;
+  }
+  .hero-img-placeholder::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.05); pointer-events: none;
   }
   .hero-content { padding: 24px 28px; }
   .hero-badge {
@@ -208,9 +238,10 @@ const COMMON_CSS = `
   }
   .article-thumb-placeholder {
     width: 120px; min-width: 120px; height: 80px; border-radius: 8px;
-    background: linear-gradient(135deg, #f1f3f4 0%, #e8eaed 100%);
     display: flex; align-items: center; justify-content: center;
-    color: var(--text-muted); font-size: 1.4rem; flex-shrink: 0;
+    color: rgba(255,255,255,0.85); font-size: 0.75rem; font-weight: 600;
+    flex-shrink: 0; letter-spacing: 0.5px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.1);
   }
   .article-num {
     font-size: 1.4rem; font-weight: 800; color: var(--accent-blue);
@@ -518,7 +549,7 @@ function articleTemplate(article, trendKeywords) {
       <header class="article-page-header">
         <div class="article-page-keyword"># ${escapeHtml(article.keyword || '')}</div>
         <h1 class="article-page-title">${escapeHtml(article.title)}</h1>
-        ${articleImage ? `<img class="article-page-hero-img" src="${escapeHtml(articleImage)}" alt="${escapeHtml(article.title)}" loading="lazy" onerror="this.style.display='none'">` : ''}
+        ${articleImage ? `<img class="article-page-hero-img" src="${escapeHtml(articleImage)}" alt="${escapeHtml(article.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">` : ''}
         <div class="article-page-meta">
           <span>${config.site.title} 편집팀</span>
           <span>${formatDate(publishDate)}</span>
@@ -558,12 +589,39 @@ function indexTemplate(articles, trendKeywords) {
   const restArticles = articles.slice(1);
   const topKeywords = trendKeywords || [];
 
+  // 이미지 로드 실패 시 fallback 함수 (인라인 JS)
+  function imgFallbackScript() {
+    return `
+  <script>
+    function imgFail(el, keyword, isHero) {
+      var gradients = [
+        'linear-gradient(135deg,#667eea,#764ba2)',
+        'linear-gradient(135deg,#f093fb,#f5576c)',
+        'linear-gradient(135deg,#4facfe,#00f2fe)',
+        'linear-gradient(135deg,#43e97b,#38f9d7)',
+        'linear-gradient(135deg,#fa709a,#fee140)',
+        'linear-gradient(135deg,#a18cd1,#fbc2eb)',
+        'linear-gradient(135deg,#84fab0,#8fd3f4)',
+        'linear-gradient(135deg,#fbc2eb,#a6c1ee)',
+        'linear-gradient(135deg,#a1c4fd,#c2e9fb)',
+        'linear-gradient(135deg,#ffecd2,#fcb69f)'
+      ];
+      var h = 0;
+      for (var i = 0; i < keyword.length; i++) h = keyword.charCodeAt(i) + ((h << 5) - h);
+      var bg = gradients[Math.abs(h) % gradients.length];
+      var cls = isHero ? 'hero-img-placeholder' : 'article-thumb-placeholder';
+      var label = isHero ? keyword : keyword.substring(0, 6);
+      el.outerHTML = '<div class="' + cls + '" style="background:' + bg + '"># ' + label + '</div>';
+    }
+  </script>`;
+  }
+
   const heroHTML = heroArticle ? `
     <div class="hero-card">
       <a href="/articles/${heroArticle.slug}.html">
         ${heroArticle.image
-          ? `<img class="hero-img" src="${escapeHtml(heroArticle.image)}" alt="${escapeHtml(heroArticle.title)}" loading="lazy" onerror="this.outerHTML='<div class=\\'hero-img-placeholder\\'>📰</div>'">`
-          : '<div class="hero-img-placeholder">📰</div>'}
+          ? `<img class="hero-img" src="${escapeHtml(heroArticle.image)}" alt="${escapeHtml(heroArticle.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="imgFail(this,'${escapeHtml(heroArticle.keyword || '트렌드').replace(/'/g, '')}',true)">`
+          : `<div class="hero-img-placeholder" style="background:${keywordGradient(heroArticle.keyword)}"># ${escapeHtml(heroArticle.keyword || '트렌드')}</div>`}
         <div class="hero-content">
           <span class="hero-badge">최신 트렌드</span>
           <h1 class="hero-title">${escapeHtml(heroArticle.title)}</h1>
@@ -583,8 +641,8 @@ function indexTemplate(articles, trendKeywords) {
     <div class="article-card">
       <a href="/articles/${article.slug}.html">
         ${article.image
-          ? `<img class="article-thumb" src="${escapeHtml(article.image)}" alt="${escapeHtml(article.title)}" loading="lazy" onerror="this.outerHTML='<div class=\\'article-thumb-placeholder\\'>📄</div>'">`
-          : '<div class="article-thumb-placeholder">📄</div>'}
+          ? `<img class="article-thumb" src="${escapeHtml(article.image)}" alt="${escapeHtml(article.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="imgFail(this,'${escapeHtml(article.keyword || '뉴스').replace(/'/g, '')}',false)">`
+          : `<div class="article-thumb-placeholder" style="background:${keywordGradient(article.keyword)}"># ${escapeHtml(article.keyword || '뉴스').substring(0, 6)}</div>`}
         <div class="article-info">
           <span class="article-tag"># ${escapeHtml(article.keyword || '')}</span>
           <h2 class="article-title">${escapeHtml(article.title)}</h2>
@@ -674,6 +732,7 @@ function indexTemplate(articles, trendKeywords) {
   ${COMMON_CSS}
 </head>
 <body>
+  ${imgFallbackScript()}
   ${navHTML()}
   ${trendBarHTML(topKeywords, articles)}
 
