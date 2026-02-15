@@ -83,7 +83,58 @@ async function fetchGoogleNews(keyword, count = 5) {
   }
 }
 
-// ========== 기사 본문 크롤링 ==========
+// ========== 이미지 URL 추출 ==========
+function extractImage($, url) {
+  // 우선순위: og:image > twitter:image > meta image > 본문 내 이미지
+  const candidates = [
+    $('meta[property="og:image"]').attr('content'),
+    $('meta[name="twitter:image"]').attr('content'),
+    $('meta[property="og:image:url"]').attr('content'),
+    $('meta[name="thumbnail"]').attr('content'),
+    $('meta[itemprop="image"]').attr('content'),
+  ];
+
+  // 본문 내 큰 이미지 탐색
+  const articleImgSelectors = [
+    '#articleBodyContents img', '#newsct_article img',
+    '.article_body img', '.article-body img',
+    'article img', '[itemprop="articleBody"] img',
+    '.news_body img', '.view_cont img',
+  ];
+
+  for (const sel of articleImgSelectors) {
+    $(sel).each((i, el) => {
+      const src = $(el).attr('data-src') || $(el).attr('src');
+      if (src) candidates.push(src);
+    });
+  }
+
+  for (let img of candidates) {
+    if (!img) continue;
+    img = img.trim();
+    // 상대 경로 → 절대 경로
+    if (img.startsWith('//')) img = 'https:' + img;
+    else if (img.startsWith('/')) {
+      try {
+        const u = new URL(url);
+        img = u.origin + img;
+      } catch { continue; }
+    }
+    // 너무 작은 아이콘/로고 필터링
+    if (img.includes('logo') || img.includes('icon') || img.includes('favicon')) continue;
+    if (img.includes('1x1') || img.includes('pixel') || img.includes('blank')) continue;
+    // 유효한 이미지 URL인지 확인
+    if (img.startsWith('http') && /\.(jpg|jpeg|png|webp|gif)/i.test(img) || img.includes('image') || img.includes('img') || img.includes('photo')) {
+      return img;
+    }
+    // og:image는 확장자 없을 수도 있으므로 http이면 수용
+    if (img.startsWith('http')) return img;
+  }
+
+  return '';
+}
+
+// ========== 기사 본문 + 이미지 크롤링 ==========
 async function fetchArticleContent(url) {
   try {
     const response = await axios.get(url, {
@@ -93,6 +144,9 @@ async function fetchArticleContent(url) {
     });
 
     const $ = cheerio.load(response.data);
+
+    // 이미지 추출
+    const image = extractImage($, url);
 
     // 일반적인 뉴스 사이트의 기사 본문 셀렉터들
     const contentSelectors = [
@@ -119,14 +173,12 @@ async function fetchArticleContent(url) {
     for (const selector of contentSelectors) {
       const el = $(selector);
       if (el.length > 0) {
-        // 스크립트, 스타일, 광고 제거
         el.find('script, style, .ad, .advertisement, .banner, iframe, .social-share').remove();
         content = el.text().trim();
         if (content.length > 100) break;
       }
     }
 
-    // 본문이 짧으면 p 태그에서 수집
     if (content.length < 100) {
       const paragraphs = [];
       $('p').each((i, el) => {
@@ -138,15 +190,12 @@ async function fetchArticleContent(url) {
       content = paragraphs.join('\n\n');
     }
 
-    // 불필요한 공백/줄바꿈 정리
     content = content
       .replace(/\s+/g, ' ')
       .replace(/\n\s*\n/g, '\n\n')
       .trim();
 
-    // 최대 5000자로 제한 (AI에게 더 풍부한 컨텍스트 제공)
     if (content.length > 5000) {
-      // 마지막 완전한 문장까지만 자르기
       let truncated = content.substring(0, 5000);
       const lastPeriod = truncated.lastIndexOf('다.');
       if (lastPeriod > 3000) {
@@ -155,10 +204,10 @@ async function fetchArticleContent(url) {
       content = truncated;
     }
 
-    return content;
+    return { content, image };
   } catch (error) {
     logger.debug(`[뉴스] 기사 본문 크롤링 실패 [${url}]: ${error.message}`);
-    return '';
+    return { content: '', image: '' };
   }
 }
 
@@ -192,23 +241,35 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
     }
   }
 
-  // 상위 기사의 본문 가져오기 (최대 5개로 확대 - 기사 품질 향상)
+  // 상위 기사의 본문 + 이미지 수집 (최대 5개, 병렬)
   const topArticles = uniqueArticles.slice(0, 5);
   const contentPromises = topArticles.map(async (article) => {
     if (article.link) {
-      article.fullContent = await fetchArticleContent(article.link);
+      const result = await fetchArticleContent(article.link);
+      if (typeof result === 'object') {
+        article.fullContent = result.content;
+        article.image = result.image || '';
+      } else {
+        // 하위 호환 (문자열 반환)
+        article.fullContent = result;
+        article.image = '';
+      }
     }
     return article;
   });
   await Promise.allSettled(contentPromises);
 
-  logger.info(`[뉴스] "${keyword}": 총 ${uniqueArticles.length}개 기사 수집 (본문 ${topArticles.filter(a => a.fullContent).length}개)`);
+  // 대표 이미지: 가장 먼저 이미지가 있는 기사에서 추출
+  const representativeImage = topArticles.find(a => a.image)?.image || '';
+
+  logger.info(`[뉴스] "${keyword}": 총 ${uniqueArticles.length}개 기사 수집 (본문 ${topArticles.filter(a => a.fullContent).length}개, 이미지 ${topArticles.filter(a => a.image).length}개)`);
 
   return {
     keyword,
     articles: uniqueArticles,
     topArticlesWithContent: topArticles,
     totalCount: uniqueArticles.length,
+    representativeImage,
   };
 }
 

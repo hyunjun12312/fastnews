@@ -231,7 +231,7 @@ const COMMON_CSS = `
 
   .ranking-item {
     display: flex; align-items: center; gap: 12px;
-    padding: 10px 20px; transition: background 0.15s; cursor: default;
+    padding: 10px 20px; transition: background 0.15s; cursor: pointer;
   }
   .ranking-item:hover { background: #f1f3f4; }
   .ranking-num {
@@ -555,17 +555,23 @@ function indexTemplate(articles, trendKeywords) {
       </a>
     </div>`).join('\n');
 
-  // 사이드바 실시간 검색어 순위
+  // 사이드바 실시간 검색어 순위 (클릭 시 기사 또는 검색 연결)
+  const articleMap = {};
+  articles.forEach(a => { if (a.keyword) articleMap[a.keyword] = a.slug; });
+
   const rankingHTML = topKeywords.slice(0, 20).map((kw, i) => {
     const keyword = typeof kw === 'string' ? kw : kw.keyword;
     const numClass = i < 3 ? `r${i + 1}` : '';
     const badge = i < 5 ? '<span class="ranking-badge badge-new">NEW</span>' : '';
+    const slug = articleMap[keyword];
+    const href = slug ? `/articles/${slug}.html` : `https://search.naver.com/search.naver?query=${encodeURIComponent(keyword)}`;
+    const target = slug ? '' : ' target="_blank" rel="noopener"';
     return `
-      <div class="ranking-item">
+      <a class="ranking-item" href="${href}"${target} style="text-decoration:none;color:inherit;">
         <span class="ranking-num ${numClass}">${i + 1}</span>
         <span class="ranking-text">${escapeHtml(keyword)}</span>
         ${badge}
-      </div>`;
+      </a>`;
   }).join('');
 
   return `<!DOCTYPE html>
