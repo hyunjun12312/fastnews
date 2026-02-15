@@ -77,7 +77,8 @@ const KEYWORD_STOPWORDS = new Set([
   '나라', '이웃', '오빠', '언니', '동생', '형', '공항', '변호사', '의사', '교수',
   '자기야', '주인공', '조상님', '충남도', '경기도', '전남도', '전북도', '경남도', '경북도',
   '생활양식', '제사상', '그들', '여야', '뛰노', '이틀', '사흘', '며칠',
-  '금하지', '파산까지',
+  '금하지', '파산까지', '충주시', '전국', '세계', '역사', '미래',
+  '설날', '추석', '명절', '연휴', '귀성', '정체', '극심',
   // 감정/상태
   '행복', '슬픔', '분노', '기쁨', '걱정', '불안', '두려움',
   // 사이트/네비게이션
@@ -317,43 +318,37 @@ async function crawlSignalBz() {
     const keywords = [];
     const seen = new Set();
 
-    // Signal.bz 여러 페이지에서 검색어 순위 수집
-    const urls = ['https://signal.bz/', 'https://signal.bz/news'];
+    // Signal.bz API에서 실시간 검색어 직접 수집
+    const response = await axios.get('https://test-api.signal.bz/news/realtime', {
+      headers: { ...HEADERS, Referer: 'https://signal.bz/' },
+      timeout: 15000,
+    });
 
-    for (const pageUrl of urls) {
-      try {
-        const response = await axios.get(pageUrl, {
-          headers: { ...HEADERS, Referer: 'https://signal.bz/' },
-          timeout: 15000,
-        });
+    const data = response.data;
+    if (data && data.top10 && Array.isArray(data.top10)) {
+      for (const item of data.top10) {
+        if (!item.keyword) continue;
 
-        const $ = cheerio.load(response.data);
+        // Signal.bz는 긴 문장형 키워드를 반환하므로 핵심 키워드를 추출
+        const rawKeyword = item.keyword.trim();
 
-        const selectors = [
-          '.rank-text', '.keyword-text', 'a.rank-name',
-          '.list-group-item', 'ol li a', '.home-rank a',
-          '[class*="keyword"] a', '[class*="rank"] span',
-          '[class*="trend"] a', 'td a',
-        ];
+        // 1) 쉼표로 분리된 복합 키워드 → 각각 처리
+        const parts = rawKeyword.split(/[,，]/).map(p => p.trim()).filter(p => p.length >= 2);
 
-        for (const selector of selectors) {
-          $(selector).each((i, el) => {
-            let text = $(el).text().trim()
-              .replace(/^\d+\s*/, '')
-              .replace(/\s*(new|up|down|same|NEW|▲|▼|━|-)\s*$/i, '')
-              .replace(/\s+/g, ' ')
-              .trim();
-            if (text && text.length >= 2 && text.length <= 20 && !seen.has(text.toLowerCase())) {
-              seen.add(text.toLowerCase());
-              keywords.push({ keyword: text, source: 'signal', rank: keywords.length + 1 });
+        for (const part of parts) {
+          const words = part.split(/\s+/);
+
+          // 2단어 이하면 그대로 사용
+          if (words.length <= 2) {
+            addSignalKeyword(keywords, seen, part, item.rank);
+          } else {
+            // 3단어 이상이면 첫 1~2단어 추출 (보통 인물명/핵심 토픽)
+            addSignalKeyword(keywords, seen, words[0], item.rank);
+            if (words.length >= 2) {
+              addSignalKeyword(keywords, seen, words.slice(0, 2).join(' '), item.rank);
             }
-          });
-          if (keywords.length >= 10) break;
+          }
         }
-
-        if (keywords.length >= 10) break;
-      } catch (e) {
-        logger.debug(`[크롤러] Signal.bz ${pageUrl} 실패: ${e.message}`);
       }
     }
 
@@ -362,6 +357,14 @@ async function crawlSignalBz() {
   } catch (error) {
     logger.error(`[크롤러] Signal.bz 크롤링 실패: ${error.message}`);
     return [];
+  }
+}
+
+function addSignalKeyword(keywords, seen, text, rank) {
+  const cleaned = text.replace(/^\d+\s*/, '').replace(/\s+/g, ' ').trim();
+  if (cleaned && cleaned.length >= 2 && cleaned.length <= 20 && !seen.has(cleaned.toLowerCase())) {
+    seen.add(cleaned.toLowerCase());
+    keywords.push({ keyword: cleaned, source: 'signal', rank: rank });
   }
 }
 

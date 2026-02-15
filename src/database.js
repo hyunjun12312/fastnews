@@ -285,6 +285,11 @@ function deleteArticlesWithGarbageKeywords() {
   return { changes: (result1?.changes || 0) + (result2?.changes || 0) + (result3?.changes || 0) + (result4?.changes || 0) + (result5?.changes || 0) };
 }
 
+// 기사 삭제
+function deleteArticle(id) {
+  return runSql('DELETE FROM articles WHERE id = ?', [id]);
+}
+
 // 키워드 정제된 값으로 업데이트
 function updateArticleKeyword(id, keyword) {
   return runSql('UPDATE articles SET keyword = ? WHERE id = ?', [keyword, id]);
@@ -319,7 +324,7 @@ module.exports = {
   getRecentKeywords, isKeywordRecent, insertArticle, getArticles, getArticleBySlug,
   getArticleById, incrementViews, getArticleCount, getTodayArticleCount,
   hasArticleForKeyword, updateArticleImage, getArticlesWithoutImage,
-  getLowQualityArticles, updateArticle, updateArticleKeyword, deleteArticlesWithLongKeywords,
-  deleteArticlesWithGarbageKeywords,
+  getLowQualityArticles, updateArticle, updateArticleKeyword, deleteArticle,
+  deleteArticlesWithLongKeywords, deleteArticlesWithGarbageKeywords,
   logCrawl, getStats, saveToDisk,
 };

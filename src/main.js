@@ -440,6 +440,43 @@ async function start() {
     logger.warn(`[시작] 쓰레기 키워드 삭제 실패: ${e.message}`);
   }
 
+  // 1.67 isGoodKeyword 기반 포괄적 쓰레기 정리 (기존 SQL 매칭 실패 보완)
+  try {
+    const allArticles = db.getArticles({ status: 'published', limit: 500 });
+    let comprehensiveDeleted = 0;
+    for (const article of allArticles) {
+      if (!crawler.isGoodKeyword(article.keyword)) {
+        // 정적 HTML 파일도 삭제
+        try {
+          if (article.slug) {
+            const htmlPath = path.join(
+              process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'public') : path.join(__dirname, '..', 'public'),
+              'articles', `${article.slug}.html`
+            );
+            if (fs.existsSync(htmlPath)) fs.unlinkSync(htmlPath);
+          }
+        } catch (fe) { /* 파일 삭제 실패 무시 */ }
+        db.deleteArticle(article.id);
+        comprehensiveDeleted++;
+        logger.info(`[쓰레기 정리] 삭제: "${article.keyword}"`);
+      }
+    }
+    if (comprehensiveDeleted > 0) {
+      logger.info(`[시작] isGoodKeyword 기반 쓰레기 기사 ${comprehensiveDeleted}개 추가 삭제`);
+    }
+  } catch (e) {
+    logger.warn(`[시작] 포괄적 쓰레기 정리 실패: ${e.message}`);
+  }
+
+  // 1.68 모든 정리 후 인덱스 재생성
+  try {
+    const cleanArticles = db.getArticles({ status: 'published', limit: 50 });
+    publisher.updateIndex(cleanArticles, getRecentTrendKeywords());
+    logger.info(`[시작] 정리 후 인덱스 재생성 완료 (${cleanArticles.length}개 기사)`);
+  } catch (e) {
+    logger.warn(`[시작] 정리 후 인덱스 재생성 실패: ${e.message}`);
+  }
+
   // 1.7 이미지 없는 기존 기사에 이미지 채우기 (백필)
   try {
     await backfillArticleImages();
