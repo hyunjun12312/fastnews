@@ -201,6 +201,14 @@ function hasArticleForKeyword(keyword) {
   return row && row.cnt > 0;
 }
 
+function updateArticleImage(id, image) {
+  return runSql('UPDATE articles SET image = ? WHERE id = ?', [image, id]);
+}
+
+function getArticlesWithoutImage(limit = 20) {
+  return queryAll("SELECT * FROM articles WHERE (image IS NULL OR image = '') AND status = 'published' ORDER BY created_at DESC LIMIT ?", [limit]);
+}
+
 // ========== 로그 ==========
 function logCrawl(source, keywordsFound, newKeywords) {
   return runSql('INSERT INTO crawl_logs (source, keywords_found, new_keywords) VALUES (?, ?, ?)', [source, keywordsFound, newKeywords]);
@@ -221,5 +229,6 @@ module.exports = {
   getDb, dbReady, insertKeyword, getUnprocessedKeywords, markKeywordProcessed,
   getRecentKeywords, isKeywordRecent, insertArticle, getArticles, getArticleBySlug,
   getArticleById, incrementViews, getArticleCount, getTodayArticleCount,
-  hasArticleForKeyword, logCrawl, getStats, saveToDisk,
+  hasArticleForKeyword, updateArticleImage, getArticlesWithoutImage,
+  logCrawl, getStats, saveToDisk,
 };

@@ -194,6 +194,43 @@ async function runPipeline() {
   }
 }
 
+// ========== 이미지 백필 (기존 기사에 이미지 추가) ==========
+async function backfillArticleImages() {
+  const articlesWithoutImage = db.getArticlesWithoutImage(20);
+  if (articlesWithoutImage.length === 0) {
+    logger.info('[이미지 백필] 이미지 없는 기사 없음');
+    return;
+  }
+
+  logger.info(`[이미지 백필] 이미지 없는 기사 ${articlesWithoutImage.length}개 발견, 이미지 수집 시작...`);
+  dashboard.emitEvent('log', `🖼️ 이미지 없는 기사 ${articlesWithoutImage.length}개 이미지 수집 중...`);
+
+  let fixed = 0;
+  for (const article of articlesWithoutImage) {
+    try {
+      const image = await newsFetcher.fetchNaverImageSearch(article.keyword);
+      if (image) {
+        db.updateArticleImage(article.id, image);
+        fixed++;
+        logger.info(`[이미지 백필] "${article.keyword}" 이미지 확보 완료`);
+      } else {
+        logger.debug(`[이미지 백필] "${article.keyword}" 이미지 못 찾음`);
+      }
+      await sleep(1000); // 요청 간격
+    } catch (e) {
+      logger.debug(`[이미지 백필] "${article.keyword}" 실패: ${e.message}`);
+    }
+  }
+
+  if (fixed > 0) {
+    // 인덱스 페이지 재생성 (이미지 반영)
+    const publishedArticles = db.getArticles({ status: 'published', limit: 50 });
+    publisher.updateIndex(publishedArticles, []);
+    logger.info(`[이미지 백필] ${fixed}/${articlesWithoutImage.length}개 기사 이미지 업데이트 완료`);
+    dashboard.emitEvent('log', `🖼️ ${fixed}개 기사 이미지 업데이트 완료`);
+  }
+}
+
 // ========== 유틸리티 ==========
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -229,6 +266,13 @@ async function start() {
     logger.info(`[시작] 기본 인덱스 생성 완료 (기존 기사 ${existingArticles.length}개)`);
   } catch (e) {
     logger.warn(`[시작] 기본 인덱스 생성 실패: ${e.message}`);
+  }
+
+  // 1.6 이미지 없는 기존 기사에 이미지 채우기 (백필)
+  try {
+    await backfillArticleImages();
+  } catch (e) {
+    logger.warn(`[시작] 이미지 백필 실패: ${e.message}`);
   }
 
   // 2. 최초 실행

@@ -395,9 +395,14 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
   await Promise.allSettled(contentPromises);
 
   // 대표 이미지: 가장 먼저 이미지가 있는 기사에서 추출
-  const representativeImage = topArticles.find(a => a.image)?.image || '';
+  let representativeImage = topArticles.find(a => a.image)?.image || '';
 
-  logger.info(`[뉴스] "${keyword}": 총 ${uniqueArticles.length}개 기사 수집 (본문 ${topArticles.filter(a => a.fullContent).length}개, 이미지 ${topArticles.filter(a => a.image).length}개)`);
+  // 이미지가 없으면 네이버 이미지 검색으로 fallback
+  if (!representativeImage) {
+    representativeImage = await fetchNaverImageSearch(keyword);
+  }
+
+  logger.info(`[뉴스] "${keyword}": 총 ${uniqueArticles.length}개 기사 수집 (본문 ${topArticles.filter(a => a.fullContent).length}개, 이미지 ${topArticles.filter(a => a.image).length}개, 대표이미지: ${representativeImage ? 'O' : 'X'})`);
 
   return {
     keyword,
@@ -408,10 +413,145 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
   };
 }
 
+// ========== 네이버 이미지 검색 (대표 이미지 fallback) ==========
+async function fetchNaverImageSearch(keyword) {
+  // 방법 1: 네이버 이미지 검색 API
+  try {
+    if (config.naver.clientId && config.naver.clientSecret) {
+      const response = await axios.get('https://openapi.naver.com/v1/search/image', {
+        params: {
+          query: keyword,
+          display: 5,
+          sort: 'date',
+          filter: 'large',
+        },
+        headers: {
+          'X-Naver-Client-Id': config.naver.clientId,
+          'X-Naver-Client-Secret': config.naver.clientSecret,
+        },
+        timeout: 10000,
+      });
+
+      const items = response.data?.items || [];
+      for (const item of items) {
+        const img = item.link || item.thumbnail;
+        if (img && img.startsWith('http') && !img.includes('logo') && !img.includes('icon')) {
+          logger.info(`[뉴스] 네이버 이미지API "${keyword}": 이미지 확보`);
+          return img;
+        }
+      }
+    }
+  } catch (error) {
+    logger.debug(`[뉴스] 네이버 이미지API 실패: ${error.message}`);
+  }
+
+  // 방법 2: 네이버 뉴스 검색 페이지에서 썸네일 크롤링
+  try {
+    const url = `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(keyword)}&sort=1`;
+    const response = await axios.get(url, {
+      headers: HEADERS,
+      timeout: 10000,
+    });
+
+    const $ = cheerio.load(response.data);
+
+    // 뉴스 검색 결과의 썸네일 이미지
+    const imgSelectors = [
+      '.news_wrap img.thumb',
+      '.api_ani_send img',
+      '.news_area img',
+      '.dsc_thumb img',
+      'img.thumb_area',
+      '.news_contents img',
+      'img[data-lazysrc]',
+      '.thumb_box img',
+    ];
+
+    for (const sel of imgSelectors) {
+      const found = [];
+      $(sel).each((i, el) => {
+        const src = $(el).attr('data-lazysrc') || $(el).attr('data-src') || $(el).attr('src');
+        if (src) found.push(src);
+      });
+      for (let img of found) {
+        img = img.trim();
+        if (img.startsWith('//')) img = 'https:' + img;
+        if (img.startsWith('data:')) continue;
+        if (img.includes('logo') || img.includes('icon') || img.includes('favicon')) continue;
+        if (img.includes('1x1') || img.includes('pixel') || img.includes('blank.gif')) continue;
+        // 네이버 썸네일 → 고해상도로 변환
+        if (img.includes('pstatic.net') || img.includes('naver.net')) {
+          img = img.replace(/\/dimthumbnail\/\d+x\d+_\d+_\d+\//, '/');
+          img = img.replace(/\?type=\w+/, '?type=w800');
+          img = img.replace(/type=nf\d+_\d+/, 'type=w800');
+          img = img.replace(/type=a\d+/, 'type=w800');
+          img = img.replace(/type=ff\d+_\d+/, 'type=w800');
+        }
+        if (img.startsWith('http')) {
+          logger.info(`[뉴스] 네이버 뉴스썸네일 "${keyword}": 이미지 확보`);
+          return img;
+        }
+      }
+    }
+  } catch (error) {
+    logger.debug(`[뉴스] 네이버 뉴스 썸네일 크롤링 실패: ${error.message}`);
+  }
+
+  // 방법 3: 네이버 모바일 이미지 검색 크롤링 (API 키 없어도 가능)
+  try {
+    const url = `https://m.search.naver.com/search.naver?where=m_image&query=${encodeURIComponent(keyword)}&sort=1`;
+    const response = await axios.get(url, {
+      headers: {
+        ...HEADERS,
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+      },
+      timeout: 10000,
+    });
+
+    const $ = cheerio.load(response.data);
+    let found = '';
+
+    // 모바일 이미지 검색 결과
+    $('img').each((i, el) => {
+      if (found || i > 20) return false;
+      const src = $(el).attr('data-source') || $(el).attr('data-lazysrc') || $(el).attr('data-src') || $(el).attr('src');
+      if (!src) return;
+      let img = src.trim();
+      if (img.startsWith('//')) img = 'https:' + img;
+      if (img.startsWith('data:') || img.length < 30) return;
+      if (img.includes('logo') || img.includes('icon') || img.includes('favicon')) return;
+      if (img.includes('1x1') || img.includes('pixel') || img.includes('blank')) return;
+      if (img.includes('search_') || img.includes('btn_') || img.includes('sp_')) return;
+      // 실제 이미지 URL만 (일정 크기 이상)
+      const width = parseInt($(el).attr('width') || '0');
+      const height = parseInt($(el).attr('height') || '0');
+      if ((width > 0 && width < 50) || (height > 0 && height < 50)) return;
+      if (img.startsWith('http')) {
+        found = img;
+      }
+    });
+
+    if (found) {
+      // 네이버 이미지 → 고해상도
+      if (found.includes('pstatic.net') || found.includes('naver.net')) {
+        found = found.replace(/\?type=\w+/, '?type=w800');
+      }
+      logger.info(`[뉴스] 네이버 모바일이미지 "${keyword}": 이미지 확보`);
+      return found;
+    }
+  } catch (error) {
+    logger.debug(`[뉴스] 네이버 모바일 이미지 크롤링 실패: ${error.message}`);
+  }
+
+  logger.warn(`[뉴스] "${keyword}": 이미지를 찾지 못함`);
+  return '';
+}
+
 module.exports = {
   fetchNaverNews,
   fetchGoogleNews,
   fetchNaverSearchNews,
   fetchArticleContent,
   fetchNewsForKeyword,
+  fetchNaverImageSearch,
 };
