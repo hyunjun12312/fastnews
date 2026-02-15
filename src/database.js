@@ -241,6 +241,22 @@ function deleteArticlesWithLongKeywords(maxLen = 15) {
   return runSql('DELETE FROM articles WHERE length(keyword) > ?', [maxLen]);
 }
 
+// 쓰레기 키워드 기사 삭제 (일반 명사, 숫자 등 부적합 키워드)
+function deleteArticlesWithGarbageKeywords() {
+  const garbageKeywords = [
+    '지지', '투사', '어린', '충격', '투기', '자연', '세대', '미국', '중국', '일본',
+    '한국', '북한', '하는', '올라가', '되는', '있는', '없는', '같은', '나오는',
+    '한국인', '외국인', '국내', '해외', '정부', '국회', '여당', '야당',
+    '확인', '공개', '발표', '논란', '화제', '무소속', '감봉', '정당',
+    '반대', '비판', '의혹', '상황', '사건', '결과', '영향', '문제',
+  ];
+  const placeholders = garbageKeywords.map(() => '?').join(',');
+  const result1 = runSql(`DELETE FROM articles WHERE keyword IN (${placeholders})`, garbageKeywords);
+  // 순수 숫자 키워드 삭제
+  const result2 = runSql("DELETE FROM articles WHERE keyword GLOB '[0-9]*' AND keyword NOT GLOB '*[^0-9]*'");
+  return { changes: (result1?.changes || 0) + (result2?.changes || 0) };
+}
+
 // 키워드 정제된 값으로 업데이트
 function updateArticleKeyword(id, keyword) {
   return runSql('UPDATE articles SET keyword = ? WHERE id = ?', [keyword, id]);
@@ -276,5 +292,6 @@ module.exports = {
   getArticleById, incrementViews, getArticleCount, getTodayArticleCount,
   hasArticleForKeyword, updateArticleImage, getArticlesWithoutImage,
   getLowQualityArticles, updateArticle, updateArticleKeyword, deleteArticlesWithLongKeywords,
+  deleteArticlesWithGarbageKeywords,
   logCrawl, getStats, saveToDisk,
 };

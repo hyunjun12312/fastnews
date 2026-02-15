@@ -420,6 +420,16 @@ async function start() {
     logger.warn(`[시작] 쓰레기 기사 삭제 실패: ${e.message}`);
   }
 
+  // 1.66 일반 명사/숫자 등 쓰레기 키워드 기사 삭제
+  try {
+    const deleted = db.deleteArticlesWithGarbageKeywords();
+    if (deleted.changes > 0) {
+      logger.info(`[시작] 쓰레기 키워드 기사 ${deleted.changes}개 삭제`);
+    }
+  } catch (e) {
+    logger.warn(`[시작] 쓰레기 키워드 삭제 실패: ${e.message}`);
+  }
+
   // 1.7 이미지 없는 기존 기사에 이미지 채우기 (백필)
   try {
     await backfillArticleImages();
