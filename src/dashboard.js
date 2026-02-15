@@ -25,6 +25,9 @@ app.use((req, res, next) => {
   if (req.path.endsWith('.xml')) {
     res.type('application/xml; charset=utf-8');
   }
+  // SEO 관련 HTTP 헤더
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'origin-when-cross-origin');
   next();
 });
 
@@ -77,13 +80,18 @@ app.get('/api/articles/:id', (req, res) => {
 
 // 기사 조회 (슬러그)
 app.get('/articles/:slug', (req, res) => {
-  const slug = req.params.slug.replace('.html', '');
+  const slug = decodeURIComponent(req.params.slug).replace('.html', '');
   const article = db.getArticleBySlug(slug);
   if (article) {
     db.incrementViews(article.id);
   }
-  // 정적 파일은 express.static이 처리
-  res.sendFile(path.join(publisher.ARTICLES_DIR, `${slug}.html`));
+  const filePath = path.join(publisher.ARTICLES_DIR, `${slug}.html`);
+  const fs = require('fs');
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>404 - 페이지를 찾을 수 없습니다</title><meta name="robots" content="noindex"></head><body style="font-family:sans-serif;text-align:center;padding:60px 20px;"><h1>404</h1><p>요청하신 페이지를 찾을 수 없습니다.</p><a href="/" style="color:#1e3a5f;">홈으로 돌아가기</a></body></html>`);
+  }
 });
 
 // ========== Socket.IO 실시간 통신 ==========

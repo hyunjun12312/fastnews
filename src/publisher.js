@@ -19,6 +19,11 @@ const SITEMAP_DIR = path.join(OUTPUT_DIR, 'sitemap');
 
 logger.info(`[퍼블리셔] 출력 디렉토리: ${OUTPUT_DIR} ${DATA_DIR ? '(Railway Volume)' : '(로컬)'}`);
 
+// URL 내 한글 등 비-ASCII 문자를 퍼센트 인코딩 (사이트맵/RSS 표준 준수)
+function encodeSlugForUrl(slug) {
+  return slug.split('/').map(s => encodeURIComponent(s)).join('/');
+}
+
 function escapeHtml(text) {
   if (!text) return '';
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -48,8 +53,19 @@ function timeAgo(dateStr) {
 }
 
 // ========== 공통 CSS ==========
+// ========== 공통 HEAD 메타 (favicon, theme-color, font preload) ==========
+function commonHeadMeta() {
+  return `
+  <link rel="icon" href="${config.site.url}/favicon.ico" type="image/x-icon">
+  <link rel="icon" type="image/png" sizes="32x32" href="${config.site.url}/favicon-32x32.png">
+  <meta name="theme-color" content="#1e3a5f">
+  <link rel="alternate" hreflang="ko" href="${config.site.url}/">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preload" as="style" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"></noscript>`;
+}
+
 const COMMON_CSS = `
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <style>
   @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 
@@ -731,9 +747,9 @@ function articleTemplate(article, trendKeywords) {
   <meta property="og:url" content="${config.site.url}${pageUrl}">
   <meta property="og:site_name" content="${config.site.title}">
   <meta property="og:locale" content="ko_KR">
-  ${articleImage ? `<meta property="og:image" content="${escapeHtml(articleImage)}">` : ''}
+  ${articleImage ? `<meta property="og:image" content="${escapeHtml(articleImage)}">
   <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
+  <meta property="og:image:height" content="630">` : ''}
   <meta property="article:published_time" content="${publishDate}">
   <meta property="article:modified_time" content="${publishDate}">
   <meta property="article:section" content="뉴스">
@@ -756,7 +772,7 @@ function articleTemplate(article, trendKeywords) {
     "publisher": {
       "@type": "Organization",
       "name": "${config.site.title}",
-      "logo": { "@type": "ImageObject", "url": "/logo.png" }
+      "logo": { "@type": "ImageObject", "url": "${config.site.url}/logo.png" }
     },
     "mainEntityOfPage": { "@type": "WebPage", "@id": "${config.site.url}${pageUrl}" },
     ${articleImage ? `"image": "${escapeHtml(articleImage)}",` : ''}
@@ -776,6 +792,7 @@ function articleTemplate(article, trendKeywords) {
   }
   </script>
 
+  ${commonHeadMeta()}
   ${COMMON_CSS}
 </head>
 <body>
@@ -936,13 +953,20 @@ function indexTemplate(articles, trendKeywords) {
   <meta name="twitter:title" content="${config.site.title}">
   <meta name="twitter:description" content="${config.site.description}">
 
+  ${commonHeadMeta()}
+
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "WebSite",
     "name": "${config.site.title}",
     "description": "${config.site.description}",
-    "url": "${config.site.url}/"
+    "url": "${config.site.url}/",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "${config.site.url}/?q={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
   }
   </script>
 
@@ -1004,7 +1028,7 @@ function generateSitemap(articles, baseUrl) {
   if (!baseUrl) baseUrl = config.site.url;
   const urls = articles.map(a => `
   <url>
-    <loc>${baseUrl}/articles/${a.slug}.html</loc>
+    <loc>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</loc>
     <lastmod>${new Date(a.published_at || a.created_at || Date.now()).toISOString()}</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
@@ -1029,19 +1053,22 @@ function generateNewsSitemap(articles, baseUrl) {
     return (Date.now() - d.getTime()) < 48 * 3600000;
   });
 
-  const urls = recentArticles.map(a => `
+  const urls = recentArticles.map(a => {
+    const pubDate = new Date(a.published_at || a.created_at || Date.now());
+    const isoDate = pubDate.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+    return `
   <url>
-    <loc>${baseUrl}/articles/${a.slug}.html</loc>
+    <loc>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</loc>
     <news:news>
       <news:publication>
         <news:name>${escapeHtml(config.site.title)}</news:name>
         <news:language>ko</news:language>
       </news:publication>
-      <news:publication_date>${new Date(a.published_at || a.created_at || Date.now()).toISOString()}</news:publication_date>
+      <news:publication_date>${isoDate}</news:publication_date>
       <news:title>${escapeHtml(a.title)}</news:title>
-      <news:keywords>${escapeHtml(a.keyword || '')}</news:keywords>
     </news:news>
-  </url>`).join('');
+  </url>`;
+  }).join('');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -1056,11 +1083,11 @@ function generateRSS(articles, baseUrl) {
   const items = articles.slice(0, 50).map(a => `
     <item>
       <title><![CDATA[${a.title}]]></title>
-      <link>${baseUrl}/articles/${a.slug}.html</link>
+      <link>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</link>
       <description><![CDATA[${a.summary || ''}]]></description>
       <pubDate>${new Date(a.published_at || a.created_at || Date.now()).toUTCString()}</pubDate>
-      <guid isPermaLink="true">${baseUrl}/articles/${a.slug}.html</guid>
-      <category>${a.keyword || ''}</category>
+      <guid isPermaLink="true">${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</guid>
+      <category><![CDATA[${a.keyword || ''}]]></category>
     </item>`).join('');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
