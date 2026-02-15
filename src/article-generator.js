@@ -211,9 +211,9 @@ function parseArticleOutput(output, keyword) {
 function validateArticleQuality(content) {
   const issues = [];
 
-  // 본문 길이 검사
-  if (content.length < 500) {
-    issues.push(`본문 너무 짧음 (${content.length}자, 최소 500자)`);
+  // 본문 길이 검사 (축약형: 300자 이상)
+  if (content.length < 300) {
+    issues.push(`본문 너무 짧음 (${content.length}자, 최소 300자)`);
   }
 
   // 소제목 개수 검사
@@ -451,6 +451,7 @@ function generateFallbackArticle(keyword, newsData) {
   const slug = generateSlug(title);
   const sourceUrls = newsData?.articles?.map(a => a.link).filter(Boolean) || [];
   const tags = [keyword, '실시간', '이슈', '뉴스'];
+  const image = newsData?.representativeImage || '';
 
   return {
     title,
@@ -460,6 +461,7 @@ function generateFallbackArticle(keyword, newsData) {
     slug,
     sourceUrls,
     keyword,
+    image,
   };
 }
 

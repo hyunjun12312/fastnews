@@ -169,7 +169,16 @@ const COMMON_CSS = `
     transition: box-shadow 0.3s, transform 0.2s;
   }
   .hero-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
-  .hero-card a { text-decoration: none; color: inherit; display: block; padding: 28px; }
+  .hero-card a { text-decoration: none; color: inherit; display: block; }
+  .hero-img {
+    width: 100%; height: 280px; object-fit: cover; display: block;
+  }
+  .hero-img-placeholder {
+    width: 100%; height: 200px; background: linear-gradient(135deg, #e8f0fe 0%, #d2e3fc 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent-blue); font-size: 2.5rem;
+  }
+  .hero-content { padding: 24px 28px; }
   .hero-badge {
     display: inline-block; font-size: 0.7rem; font-weight: 700;
     padding: 3px 10px; border-radius: 4px; margin-bottom: 12px;
@@ -190,8 +199,18 @@ const COMMON_CSS = `
   }
   .article-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
   .article-card a {
-    display: flex; padding: 18px 20px; text-decoration: none; color: inherit;
-    gap: 16px; align-items: flex-start;
+    display: flex; padding: 16px 20px; text-decoration: none; color: inherit;
+    gap: 14px; align-items: stretch;
+  }
+  .article-thumb {
+    width: 120px; min-width: 120px; height: 80px; border-radius: 8px;
+    object-fit: cover; background: #f1f3f4;
+  }
+  .article-thumb-placeholder {
+    width: 120px; min-width: 120px; height: 80px; border-radius: 8px;
+    background: linear-gradient(135deg, #f1f3f4 0%, #e8eaed 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 1.4rem; flex-shrink: 0;
   }
   .article-num {
     font-size: 1.4rem; font-weight: 800; color: var(--accent-blue);
@@ -284,6 +303,10 @@ const COMMON_CSS = `
   .article-page-title {
     font-size: 1.8rem; font-weight: 800; line-height: 1.4;
     letter-spacing: -0.5px; margin-bottom: 16px;
+  }
+  .article-page-hero-img {
+    width: 100%; max-height: 420px; object-fit: cover; border-radius: var(--radius);
+    margin-bottom: 24px; box-shadow: var(--shadow-sm);
   }
   .article-page-meta {
     display: flex; gap: 16px; font-size: 0.85rem;
@@ -407,6 +430,7 @@ function articleTemplate(article, trendKeywords) {
   const sourceUrls = typeof article.source_urls === 'string'
     ? JSON.parse(article.source_urls || '[]') : (article.source_urls || []);
   const pageUrl = `/articles/${article.slug}.html`;
+  const articleImage = article.image || '';
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -428,15 +452,17 @@ function articleTemplate(article, trendKeywords) {
   <meta property="og:url" content="${pageUrl}">
   <meta property="og:site_name" content="${config.site.title}">
   <meta property="og:locale" content="ko_KR">
+  ${articleImage ? `<meta property="og:image" content="${escapeHtml(articleImage)}">` : ''}
   <meta property="article:published_time" content="${publishDate}">
   <meta property="article:modified_time" content="${publishDate}">
   <meta property="article:section" content="트렌드">
   <meta property="article:tag" content="${escapeHtml(article.keyword || '')}">
 
   <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:card" content="${articleImage ? 'summary_large_image' : 'summary'}">
   <meta name="twitter:title" content="${escapeHtml(article.title)}">
   <meta name="twitter:description" content="${escapeHtml(article.summary || '')}">
+  ${articleImage ? `<meta name="twitter:image" content="${escapeHtml(articleImage)}">` : ''}
 
   <!-- 구조화 데이터 (Google Rich Results) -->
   <script type="application/ld+json">
@@ -454,6 +480,7 @@ function articleTemplate(article, trendKeywords) {
       "logo": { "@type": "ImageObject", "url": "/logo.png" }
     },
     "mainEntityOfPage": { "@type": "WebPage", "@id": "${pageUrl}" },
+    ${articleImage ? `"image": "${escapeHtml(articleImage)}",` : ''}
     "keywords": "${escapeHtml(article.keyword || '')}",
     "articleSection": "트렌드"
   }
@@ -491,6 +518,7 @@ function articleTemplate(article, trendKeywords) {
       <header class="article-page-header">
         <div class="article-page-keyword"># ${escapeHtml(article.keyword || '')}</div>
         <h1 class="article-page-title">${escapeHtml(article.title)}</h1>
+        ${articleImage ? `<img class="article-page-hero-img" src="${escapeHtml(articleImage)}" alt="${escapeHtml(article.title)}" loading="lazy" onerror="this.style.display='none'">` : ''}
         <div class="article-page-meta">
           <span>${config.site.title} 편집팀</span>
           <span>${formatDate(publishDate)}</span>
@@ -533,15 +561,20 @@ function indexTemplate(articles, trendKeywords) {
   const heroHTML = heroArticle ? `
     <div class="hero-card">
       <a href="/articles/${heroArticle.slug}.html">
-        <span class="hero-badge">최신 트렌드</span>
-        <h1 class="hero-title">${escapeHtml(heroArticle.title)}</h1>
-        <p class="hero-summary">${escapeHtml(heroArticle.summary || '').substring(0, 160)}</p>
-        <div class="hero-meta">
-          <span># ${escapeHtml(heroArticle.keyword || '')}</span>
-          <span class="dot"></span>
-          <span>${timeAgo(heroArticle.published_at || heroArticle.created_at)}</span>
-          <span class="dot"></span>
-          <span>조회 ${heroArticle.views || 0}</span>
+        ${heroArticle.image
+          ? `<img class="hero-img" src="${escapeHtml(heroArticle.image)}" alt="${escapeHtml(heroArticle.title)}" loading="lazy" onerror="this.outerHTML='<div class=\\'hero-img-placeholder\\'>📰</div>'">`
+          : '<div class="hero-img-placeholder">📰</div>'}
+        <div class="hero-content">
+          <span class="hero-badge">최신 트렌드</span>
+          <h1 class="hero-title">${escapeHtml(heroArticle.title)}</h1>
+          <p class="hero-summary">${escapeHtml(heroArticle.summary || '').substring(0, 160)}</p>
+          <div class="hero-meta">
+            <span># ${escapeHtml(heroArticle.keyword || '')}</span>
+            <span class="dot"></span>
+            <span>${timeAgo(heroArticle.published_at || heroArticle.created_at)}</span>
+            <span class="dot"></span>
+            <span>조회 ${heroArticle.views || 0}</span>
+          </div>
         </div>
       </a>
     </div>` : '';
@@ -549,7 +582,9 @@ function indexTemplate(articles, trendKeywords) {
   const articleCards = restArticles.map((article, i) => `
     <div class="article-card">
       <a href="/articles/${article.slug}.html">
-        <span class="article-num">${i + 2}</span>
+        ${article.image
+          ? `<img class="article-thumb" src="${escapeHtml(article.image)}" alt="${escapeHtml(article.title)}" loading="lazy" onerror="this.outerHTML='<div class=\\'article-thumb-placeholder\\'>📄</div>'">`
+          : '<div class="article-thumb-placeholder">📄</div>'}
         <div class="article-info">
           <span class="article-tag"># ${escapeHtml(article.keyword || '')}</span>
           <h2 class="article-title">${escapeHtml(article.title)}</h2>

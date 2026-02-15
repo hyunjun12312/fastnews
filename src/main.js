@@ -141,6 +141,7 @@ async function runPipeline() {
           sourceUrls: article.sourceUrls,
           slug: article.slug,
           status,
+          image: article.image || '',
         });
 
         if (status === 'published') {

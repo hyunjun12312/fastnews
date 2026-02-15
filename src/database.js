@@ -86,6 +86,9 @@ const dbReady = (async () => {
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status)`); } catch(e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_articles_created ON articles(created_at)`); } catch(e) {}
 
+  // 이미지 칼럼 추가 (기존 DB 마이그레이션)
+  try { db.run(`ALTER TABLE articles ADD COLUMN image TEXT DEFAULT ''`); } catch(e) {}
+
   saveInterval = setInterval(saveToDisk, 30000);
   process.on('exit', saveToDisk);
   process.on('SIGINT', () => { saveToDisk(); process.exit(0); });
@@ -158,11 +161,11 @@ function isKeywordRecent(keyword, hours = 6) {
 }
 
 // ========== 기사 ==========
-function insertArticle({ keywordId, keyword, title, content, summary, sourceUrls, slug, status }) {
+function insertArticle({ keywordId, keyword, title, content, summary, sourceUrls, slug, status, image }) {
   const publishedAt = status === 'published' ? new Date().toISOString() : null;
   return runSql(
-    `INSERT INTO articles (keyword_id, keyword, title, content, summary, source_urls, slug, status, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [keywordId, keyword, title, content, summary, JSON.stringify(sourceUrls || []), slug, status || 'draft', publishedAt]
+    `INSERT INTO articles (keyword_id, keyword, title, content, summary, source_urls, slug, status, published_at, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [keywordId, keyword, title, content, summary, JSON.stringify(sourceUrls || []), slug, status || 'draft', publishedAt, image || '']
   );
 }
 
