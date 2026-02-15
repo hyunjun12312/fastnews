@@ -253,6 +253,8 @@ function deleteArticlesWithGarbageKeywords() {
     '이들', '피해자', '오른', '연속', '여자도', '홍보전', '나선', '전면에',
     '표명', '유감', '눈물', '유럽', 'Naver', 'naver', '중소기업의 눈물',
     '바닥론', '소속', '돌연', '결국', '사실',
+    '여전히', '구성', '정상', '정거장', '개인비서', '자료정리', '구조분석',
+    '이어트', '코르티스',
   ];
   const placeholders = garbageKeywords.map(() => '?').join(',');
   const result1 = runSql(`DELETE FROM articles WHERE keyword IN (${placeholders})`, garbageKeywords);

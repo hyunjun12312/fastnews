@@ -644,9 +644,10 @@ function trendTickerHTML(trendKeywords, articles) {
   const articleMap = {};
   if (articles) articles.forEach(a => { if (a.keyword) articleMap[a.keyword] = a.slug; });
 
-  const kwList = [...trendKeywords, ...trendKeywords];
+  const limitedKw = trendKeywords.slice(0, 20);
+  const kwList = [...limitedKw, ...limitedKw];
   const items = kwList.map((kw, i) => {
-    const rank = (i % trendKeywords.length) + 1;
+    const rank = (i % limitedKw.length) + 1;
     const keyword = typeof kw === 'string' ? kw : kw.keyword;
     const slug = articleMap[keyword];
     const href = slug ? `/articles/${slug}.html` : `https://search.naver.com/search.naver?query=${encodeURIComponent(keyword)}`;
