@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { marked } = require('marked');
+const axios = require('axios');
 const logger = require('./logger');
 const config = require('./config');
 
@@ -81,6 +82,8 @@ function timeAgo(dateStr) {
 
 // ========== 공통 CSS ==========
 const COMMON_CSS = `
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
 <style>
   @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
   
@@ -473,17 +476,21 @@ function articleTemplate(article, trendKeywords) {
   <meta name="keywords" content="${escapeHtml(article.keyword || '')}, 실시간 뉴스, 트렌드, ${escapeHtml(article.keyword || '')} 뉴스">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
   <meta name="author" content="${config.site.title}">
-  <link rel="canonical" href="${pageUrl}">
-  <link rel="alternate" type="application/rss+xml" title="${config.site.title} RSS" href="/rss.xml">
+  <link rel="canonical" href="${config.site.url}${pageUrl}">
+  <link rel="alternate" type="application/rss+xml" title="${config.site.title} RSS" href="${config.site.url}/rss.xml">
+  ${config.site.naverVerification ? `<meta name="naver-site-verification" content="${config.site.naverVerification}">` : ''}
+  ${config.site.googleVerification ? `<meta name="google-site-verification" content="${config.site.googleVerification}">` : ''}
 
   <!-- Open Graph -->
   <meta property="og:type" content="article">
   <meta property="og:title" content="${escapeHtml(article.title)}">
   <meta property="og:description" content="${escapeHtml(article.summary || '')}">
-  <meta property="og:url" content="${pageUrl}">
+  <meta property="og:url" content="${config.site.url}${pageUrl}">
   <meta property="og:site_name" content="${config.site.title}">
   <meta property="og:locale" content="ko_KR">
   ${articleImage ? `<meta property="og:image" content="${escapeHtml(articleImage)}">` : ''}
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
   <meta property="article:published_time" content="${publishDate}">
   <meta property="article:modified_time" content="${publishDate}">
   <meta property="article:section" content="트렌드">
@@ -510,7 +517,7 @@ function articleTemplate(article, trendKeywords) {
       "name": "${config.site.title}",
       "logo": { "@type": "ImageObject", "url": "/logo.png" }
     },
-    "mainEntityOfPage": { "@type": "WebPage", "@id": "${pageUrl}" },
+    "mainEntityOfPage": { "@type": "WebPage", "@id": "${config.site.url}${pageUrl}" },
     ${articleImage ? `"image": "${escapeHtml(articleImage)}",` : ''}
     "keywords": "${escapeHtml(article.keyword || '')}",
     "articleSection": "트렌드"
@@ -523,8 +530,8 @@ function articleTemplate(article, trendKeywords) {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     "itemListElement": [
-      { "@type": "ListItem", "position": 1, "name": "홈", "item": "/" },
-      { "@type": "ListItem", "position": 2, "name": "${escapeHtml(article.keyword || '')}", "item": "${pageUrl}" }
+      { "@type": "ListItem", "position": 1, "name": "홈", "item": "${config.site.url}/" },
+      { "@type": "ListItem", "position": 2, "name": "${escapeHtml(article.keyword || '')}", "item": "${config.site.url}${pageUrl}" }
     ]
   }
   </script>
@@ -569,8 +576,8 @@ function articleTemplate(article, trendKeywords) {
 
       <div class="article-share">
         <div class="article-share-title">이 기사 공유하기</div>
-        <a class="share-btn share-twitter" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(pageUrl)}" target="_blank" rel="noopener">Twitter</a>
-        <a class="share-btn share-facebook" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pageUrl)}" target="_blank" rel="noopener">Facebook</a>
+        <a class="share-btn share-twitter" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(config.site.url + pageUrl)}" target="_blank" rel="noopener">Twitter</a>
+        <a class="share-btn share-facebook" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(config.site.url + pageUrl)}" target="_blank" rel="noopener">Facebook</a>
         <button class="share-btn share-copy" onclick="navigator.clipboard.writeText(location.href);this.textContent='복사됨!';">링크 복사</button>
       </div>
     </article>
@@ -685,13 +692,15 @@ function indexTemplate(articles, trendKeywords) {
   <meta name="keywords" content="실시간 뉴스, 트렌드 뉴스, 실시간 검색어, 인기 검색어, 최신 뉴스, 한국 뉴스">
   <meta name="robots" content="index, follow">
   <meta name="author" content="${config.site.title}">
-  <link rel="canonical" href="/">
-  <link rel="alternate" type="application/rss+xml" title="${config.site.title} RSS" href="/rss.xml">
+  <link rel="canonical" href="${config.site.url}/">
+  <link rel="alternate" type="application/rss+xml" title="${config.site.title} RSS" href="${config.site.url}/rss.xml">
+  ${config.site.naverVerification ? `<meta name="naver-site-verification" content="${config.site.naverVerification}">` : ''}
+  ${config.site.googleVerification ? `<meta name="google-site-verification" content="${config.site.googleVerification}">` : ''}
 
   <meta property="og:type" content="website">
   <meta property="og:title" content="${config.site.title}">
   <meta property="og:description" content="${config.site.description}">
-  <meta property="og:url" content="/">
+  <meta property="og:url" content="${config.site.url}/">
   <meta property="og:site_name" content="${config.site.title}">
   <meta property="og:locale" content="ko_KR">
 
@@ -705,10 +714,10 @@ function indexTemplate(articles, trendKeywords) {
     "@type": "WebSite",
     "name": "${config.site.title}",
     "description": "${config.site.description}",
-    "url": "/",
+    "url": "${config.site.url}/",
     "potentialAction": {
       "@type": "SearchAction",
-      "target": "/?q={search_term_string}",
+      "target": "${config.site.url}/?q={search_term_string}",
       "query-input": "required name=search_term_string"
     }
   }
@@ -722,7 +731,7 @@ function indexTemplate(articles, trendKeywords) {
       ${articles.slice(0, 10).map((a, i) => `{
         "@type": "ListItem",
         "position": ${i + 1},
-        "url": "/articles/${a.slug}.html",
+        "url": "${config.site.url}/articles/${a.slug}.html",
         "name": "${escapeHtml(a.title)}"
       }`).join(',\n      ')}
     ]
@@ -778,7 +787,7 @@ function indexTemplate(articles, trendKeywords) {
 
 // ========== 사이트맵 ==========
 function generateSitemap(articles, baseUrl = '') {
-  if (!baseUrl) baseUrl = process.env.SITE_URL || 'https://fastnews-production.up.railway.app';
+  if (!baseUrl) baseUrl = config.site.url;
   const urls = articles.map(a => `
   <url>
     <loc>${baseUrl}/articles/${a.slug}.html</loc>
@@ -800,7 +809,7 @@ function generateSitemap(articles, baseUrl = '') {
 
 // ========== Google News 사이트맵 ==========
 function generateNewsSitemap(articles, baseUrl = '') {
-  if (!baseUrl) baseUrl = process.env.SITE_URL || 'https://fastnews-production.up.railway.app';
+  if (!baseUrl) baseUrl = config.site.url;
   const recentArticles = articles.filter(a => {
     const d = new Date(a.published_at || a.created_at);
     return (Date.now() - d.getTime()) < 48 * 3600000; // 48시간 이내
@@ -829,7 +838,7 @@ ${urls}
 
 // ========== RSS ==========
 function generateRSS(articles, baseUrl = '') {
-  if (!baseUrl) baseUrl = process.env.SITE_URL || 'https://fastnews-production.up.railway.app';
+  if (!baseUrl) baseUrl = config.site.url;
   const items = articles.slice(0, 50).map(a => `
     <item>
       <title><![CDATA[${a.title}]]></title>
@@ -856,7 +865,7 @@ function generateRSS(articles, baseUrl = '') {
 
 // ========== robots.txt ==========
 function generateRobotsTxt(baseUrl = '') {
-  if (!baseUrl) baseUrl = process.env.SITE_URL || 'https://fastnews-production.up.railway.app';
+  if (!baseUrl) baseUrl = config.site.url;
   return `User-agent: *
 Allow: /
 
@@ -868,6 +877,33 @@ Allow: /articles/
 `;
 }
 
+// ========== 검색엔진 알림 (Ping) ==========
+async function pingSearchEngines(articleUrl) {
+  const sitemapUrl = `${config.site.url}/sitemap.xml`;
+  const pings = [];
+
+  // Google Ping
+  pings.push(
+    axios.get(`https://www.google.com/ping?sitemap=${encodeURIComponent(sitemapUrl)}`, { timeout: 10000 })
+      .then(() => logger.info(`[SEO] Google 사이트맵 ping 완료`))
+      .catch(e => logger.debug(`[SEO] Google ping 실패: ${e.message}`))
+  );
+
+  // IndexNow (Bing/Naver/Yandex 동시 알림)
+  pings.push(
+    axios.post('https://api.indexnow.org/IndexNow', {
+      host: new URL(config.site.url).hostname,
+      key: 'fastnews_indexnow_key',
+      keyLocation: `${config.site.url}/fastnews_indexnow_key.txt`,
+      urlList: [articleUrl],
+    }, { timeout: 10000, headers: { 'Content-Type': 'application/json' } })
+      .then(() => logger.info(`[SEO] IndexNow ping 완료: ${articleUrl}`))
+      .catch(e => logger.debug(`[SEO] IndexNow ping 실패: ${e.message}`))
+  );
+
+  await Promise.allSettled(pings);
+}
+
 // ========== 퍼블리시 함수 ==========
 function publishArticle(article, trendKeywords) {
   try {
@@ -875,6 +911,11 @@ function publishArticle(article, trendKeywords) {
     const filePath = path.join(ARTICLES_DIR, `${article.slug}.html`);
     fs.writeFileSync(filePath, html, 'utf8');
     logger.info(`[퍼블리셔] 기사 발행: ${article.slug}.html`);
+
+    // 검색엔진에 비동기 알림 (실패해도 무시)
+    const articleUrl = `${config.site.url}/articles/${article.slug}.html`;
+    pingSearchEngines(articleUrl).catch(() => {});
+
     return filePath;
   } catch (error) {
     logger.error(`[퍼블리셔] 기사 발행 실패: ${error.message}`);
@@ -899,6 +940,14 @@ function updateIndex(articles, trendKeywords) {
     const robots = generateRobotsTxt();
     fs.writeFileSync(path.join(OUTPUT_DIR, 'robots.txt'), robots, 'utf8');
 
+    // IndexNow 키 파일 (Bing/Naver 인덱싱용)
+    fs.writeFileSync(path.join(OUTPUT_DIR, 'fastnews_indexnow_key.txt'), 'fastnews_indexnow_key', 'utf8');
+
+    // ads.txt (AdSense 준비용)
+    if (!fs.existsSync(path.join(OUTPUT_DIR, 'ads.txt'))) {
+      fs.writeFileSync(path.join(OUTPUT_DIR, 'ads.txt'), '# Google AdSense\n# google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0\n# 위 pub-ID를 실제 AdSense 게시자 ID로 교체하세요\n', 'utf8');
+    }
+
     logger.info(`[퍼블리셔] 전체 갱신 완료 (${articles.length}개 기사, sitemap, news-sitemap, RSS, robots.txt)`);
   } catch (error) {
     logger.error(`[퍼블리셔] 인덱스 갱신 실패: ${error.message}`);
@@ -908,5 +957,5 @@ function updateIndex(articles, trendKeywords) {
 module.exports = {
   publishArticle, updateIndex, generateSitemap, generateNewsSitemap,
   generateRSS, generateRobotsTxt, articleTemplate, indexTemplate,
-  OUTPUT_DIR, ARTICLES_DIR,
+  pingSearchEngines, OUTPUT_DIR, ARTICLES_DIR,
 };

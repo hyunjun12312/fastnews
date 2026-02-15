@@ -39,6 +39,9 @@ module.exports = {
   site: {
     title: process.env.SITE_TITLE || '트렌드 뉴스',
     description: process.env.SITE_DESCRIPTION || '실시간 트렌드 뉴스 자동 발행',
+    url: (process.env.SITE_URL || 'https://fastnews-production.up.railway.app').trim().replace(/\/$/, ''),
+    naverVerification: (process.env.NAVER_SITE_VERIFICATION || '').trim(),
+    googleVerification: (process.env.GOOGLE_SITE_VERIFICATION || '').trim(),
   },
 
   // 영구 저장소 (Railway Volume)

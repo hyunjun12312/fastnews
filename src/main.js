@@ -16,6 +16,7 @@ const crawler = require('./trend-crawler');
 const newsFetcher = require('./news-fetcher');
 const articleGenerator = require('./article-generator');
 const publisher = require('./publisher');
+const socialShare = require('./social-share');
 const dashboard = require('./dashboard');
 
 // 로그 디렉토리 생성
@@ -159,6 +160,13 @@ async function runPipeline() {
             slug: article.slug,
             keyword: kw.keyword,
           });
+
+          // 소셜 미디어 자동 공유
+          try {
+            await socialShare.shareArticle(savedArticle);
+          } catch (e) {
+            logger.debug(`[소셜] 공유 실패: ${e.message}`);
+          }
 
           logger.info(`✅ "${kw.keyword}" → "${article.title}" 발행 완료!`);
           dashboard.emitEvent('log', `✅ "${article.title}" 발행 완료!`);
