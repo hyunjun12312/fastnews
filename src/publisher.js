@@ -707,6 +707,7 @@ function footerHTML() {
         </div>
         <div class="footer-links">
           <a href="/">홈</a>
+          <a href="/archive">전체기사</a>
           <a href="/rss.xml">RSS</a>
           <a href="/sitemap.xml">사이트맵</a>
         </div>
@@ -1024,7 +1025,53 @@ function indexTemplate(articles, trendKeywords) {
 </html>`;
 }
 
-// ========== 사이트맵 ==========
+// ========== 사이트맵 (자동 분할 + 인덱스 지원) ==========
+const SITEMAP_MAX_URLS = 5000; // Google 권장: 50,000이지만 성능 위해 5,000 단위 분할
+
+function generateSitemapIndex(articles, baseUrl) {
+  if (!baseUrl) baseUrl = config.site.url;
+  const totalPages = Math.ceil(articles.length / SITEMAP_MAX_URLS);
+  if (totalPages <= 1) return null; // 분할 불필요하면 null
+
+  const sitemaps = [];
+  for (let i = 0; i < totalPages; i++) {
+    const pageArticles = articles.slice(i * SITEMAP_MAX_URLS, (i + 1) * SITEMAP_MAX_URLS);
+    const latestDate = pageArticles.reduce((max, a) => {
+      const d = new Date(a.published_at || a.created_at || 0);
+      return d > max ? d : max;
+    }, new Date(0));
+    sitemaps.push(`
+  <sitemap>
+    <loc>${baseUrl}/sitemap/sitemap-${i + 1}.xml</loc>
+    <lastmod>${latestDate.toISOString()}</lastmod>
+  </sitemap>`);
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${sitemaps.join('')}
+</sitemapindex>`;
+}
+
+function generateSitemapPage(articles, pageNum, baseUrl) {
+  if (!baseUrl) baseUrl = config.site.url;
+  const start = (pageNum - 1) * SITEMAP_MAX_URLS;
+  const pageArticles = articles.slice(start, start + SITEMAP_MAX_URLS);
+
+  const urls = pageArticles.map(a => `
+  <url>
+    <loc>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</loc>
+    <lastmod>${new Date(a.published_at || a.created_at || Date.now()).toISOString()}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>`).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>`;
+}
+
 function generateSitemap(articles, baseUrl) {
   if (!baseUrl) baseUrl = config.site.url;
   const urls = articles.map(a => `
@@ -1036,12 +1083,18 @@ function generateSitemap(articles, baseUrl) {
   </url>`).join('');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>${baseUrl}/</loc>
+    <lastmod>${new Date().toISOString()}</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/archive</loc>
+    <lastmod>${new Date().toISOString()}</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.6</priority>
   </url>${urls}
 </urlset>`;
 }
@@ -1122,6 +1175,7 @@ Allow: /articles/
 // ========== 검색엔진 알림 ==========
 async function pingSearchEngines(articleUrl) {
   const sitemapUrl = `${config.site.url}/sitemap.xml`;
+  const indexNowKey = config.site.url.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32) + 'key';
   const pings = [];
 
   pings.push(
@@ -1133,8 +1187,8 @@ async function pingSearchEngines(articleUrl) {
   pings.push(
     axios.post('https://api.indexnow.org/IndexNow', {
       host: new URL(config.site.url).hostname,
-      key: 'fastnews_indexnow_key',
-      keyLocation: `${config.site.url}/fastnews_indexnow_key.txt`,
+      key: indexNowKey,
+      keyLocation: `${config.site.url}/${indexNowKey}.txt`,
       urlList: [articleUrl],
     }, { timeout: 10000, headers: { 'Content-Type': 'application/json' } })
       .then(() => logger.info('[SEO] IndexNow ping 완료: ' + articleUrl))
@@ -1167,11 +1221,25 @@ function updateIndex(articles, trendKeywords) {
     const html = indexTemplate(articles, trendKeywords || []);
     fs.writeFileSync(path.join(OUTPUT_DIR, 'index.html'), html, 'utf8');
 
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'sitemap.xml'), generateSitemap(articles), 'utf8');
+    // 사이트맵 분할: 기사 5,000 초과 시 자동으로 사이트맵 인덱스 사용
+    const sitemapIndex = generateSitemapIndex(articles);
+    if (sitemapIndex) {
+      // 분할된 사이트맵
+      fs.writeFileSync(path.join(OUTPUT_DIR, 'sitemap.xml'), sitemapIndex, 'utf8');
+      const totalPages = Math.ceil(articles.length / SITEMAP_MAX_URLS);
+      for (let i = 1; i <= totalPages; i++) {
+        fs.writeFileSync(path.join(SITEMAP_DIR, `sitemap-${i}.xml`), generateSitemapPage(articles, i), 'utf8');
+      }
+      logger.info(`[SEO] 사이트맵 ${totalPages}개 파일로 분할 완료`);
+    } else {
+      // 단일 사이트맵
+      fs.writeFileSync(path.join(OUTPUT_DIR, 'sitemap.xml'), generateSitemap(articles), 'utf8');
+    }
     fs.writeFileSync(path.join(OUTPUT_DIR, 'news-sitemap.xml'), generateNewsSitemap(articles), 'utf8');
     fs.writeFileSync(path.join(OUTPUT_DIR, 'rss.xml'), generateRSS(articles), 'utf8');
     fs.writeFileSync(path.join(OUTPUT_DIR, 'robots.txt'), generateRobotsTxt(), 'utf8');
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'fastnews_indexnow_key.txt'), 'fastnews_indexnow_key', 'utf8');
+    const indexNowKey = config.site.url.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32) + 'key';
+    fs.writeFileSync(path.join(OUTPUT_DIR, `${indexNowKey}.txt`), indexNowKey, 'utf8');
 
     if (!fs.existsSync(path.join(OUTPUT_DIR, 'ads.txt'))) {
       fs.writeFileSync(path.join(OUTPUT_DIR, 'ads.txt'), '# Google AdSense\n# google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0\n', 'utf8');
@@ -1184,7 +1252,7 @@ function updateIndex(articles, trendKeywords) {
 }
 
 module.exports = {
-  publishArticle, updateIndex, generateSitemap, generateNewsSitemap,
-  generateRSS, generateRobotsTxt, articleTemplate, indexTemplate,
-  pingSearchEngines, OUTPUT_DIR, ARTICLES_DIR,
+  publishArticle, updateIndex, generateSitemap, generateSitemapIndex, generateSitemapPage,
+  generateNewsSitemap, generateRSS, generateRobotsTxt, articleTemplate, indexTemplate,
+  pingSearchEngines, OUTPUT_DIR, ARTICLES_DIR, SITEMAP_DIR,
 };

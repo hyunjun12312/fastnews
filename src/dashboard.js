@@ -24,6 +24,14 @@ app.use(express.json());
 app.use((req, res, next) => {
   if (req.path.endsWith('.xml')) {
     res.type('application/xml; charset=utf-8');
+    // 사이트맵/RSS는 자주 변경되므로 짧은 캐시
+    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600');
+  } else if (req.path.endsWith('.html') && req.path.startsWith('/articles/')) {
+    // 기사 페이지는 한번 발행되면 잘 안 바뀜 → 1시간 캐시
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=7200');
+  } else if (/\.(css|js|png|jpg|jpeg|gif|svg|ico|woff2?)$/i.test(req.path)) {
+    // 정적 에셋 → 7일 캐시
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
   }
   // SEO 관련 HTTP 헤더
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -92,6 +100,41 @@ app.get('/articles/:slug', (req, res) => {
   } else {
     res.status(404).send(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>404 - 페이지를 찾을 수 없습니다</title><meta name="robots" content="noindex"></head><body style="font-family:sans-serif;text-align:center;padding:60px 20px;"><h1>404</h1><p>요청하신 페이지를 찾을 수 없습니다.</p><a href="/" style="color:#1e3a5f;">홈으로 돌아가기</a></body></html>`);
   }
+});
+
+// ========== 아카이브(기사 목록) 페이지 - 구글 크롤링용 내부 링크 ==========
+app.get('/archive', (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const perPage = 50;
+  const offset = (page - 1) * perPage;
+  const articles = db.getArticles({ status: 'published', limit: perPage + 1, offset });
+  const hasNext = articles.length > perPage;
+  const displayArticles = articles.slice(0, perPage);
+  const siteUrl = config.site.url;
+  
+  const articleLinks = displayArticles.map(a => 
+    `<li style="margin:8px 0;"><a href="/articles/${encodeURIComponent(a.slug)}.html" style="color:#1e3a5f;">${escapeHtml(a.title)}</a> <small style="color:#999;">${new Date(a.published_at || a.created_at).toLocaleDateString('ko-KR')}</small></li>`
+  ).join('');
+
+  const pagination = [];
+  if (page > 1) pagination.push(`<a href="/archive?page=${page - 1}" style="margin:0 8px;">← 이전</a>`);
+  pagination.push(`<span style="color:#555;">페이지 ${page}</span>`);
+  if (hasNext) pagination.push(`<a href="/archive?page=${page + 1}" style="margin:0 8px;">다음 →</a>`);
+
+  res.send(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>기사 아카이브 - ${config.site.title}</title>
+<meta name="description" content="${config.site.title} 전체 기사 목록 - 페이지 ${page}">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="${siteUrl}/archive${page > 1 ? '?page=' + page : ''}">
+${page > 1 ? `<link rel="prev" href="${siteUrl}/archive${page > 2 ? '?page=' + (page - 1) : ''}">` : ''}
+${hasNext ? `<link rel="next" href="${siteUrl}/archive?page=${page + 1}">` : ''}
+</head><body style="font-family:'Pretendard',sans-serif;max-width:800px;margin:0 auto;padding:20px;">
+<h1 style="color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:10px;"><a href="/" style="color:#1e3a5f;text-decoration:none;">${escapeHtml(config.site.title)}</a> - 기사 아카이브</h1>
+<ul style="list-style:none;padding:0;">${articleLinks}</ul>
+<div style="text-align:center;padding:20px 0;">${pagination.join('')}</div>
+<footer style="text-align:center;color:#999;font-size:0.8rem;padding:20px 0;border-top:1px solid #eee;">
+<a href="/" style="color:#1e3a5f;">홈</a> | <a href="/sitemap.xml" style="color:#1e3a5f;">사이트맵</a> | <a href="/rss.xml" style="color:#1e3a5f;">RSS</a>
+</footer></body></html>`);
 });
 
 // ========== Socket.IO 실시간 통신 ==========
