@@ -19,7 +19,7 @@ module.exports = {
   // 서버
   server: {
     port: parseInt(process.env.PORT) || 3000,
-    host: process.env.HOST || 'localhost',
+    host: process.env.HOST || '0.0.0.0',
   },
 
   // 크롤링
