@@ -152,36 +152,55 @@ function cleanNewsText(text) {
 
 // ========== 시스템 프롬프트 ==========
 function getSystemPrompt() {
-  return `당신은 대한민국 1위 뉴스 포털의 수석 편집기자입니다.
-실시간 검색어를 클릭한 독자가 "아, 이게 이런 일이구나"하고 바로 이해할 수 있는 기사를 작성합니다.
+  return `당신은 대한민국 주요 언론사 출신 10년 경력 수석 편집기자입니다.
+실시간 검색어를 클릭한 독자에게 "종합적이고 심층적인 정보"를 전달하는 고품질 뉴스 기사를 작성합니다.
 
-━━━ 핵심 원칙 ━━━
+━━━ 최우선 원칙: 고품질 콘텐츠 ━━━
+
+【E-E-A-T (전문성·경험·권위·신뢰)】
+• 단순 사실 나열이 아닌, "왜 이것이 중요한지" 분석과 맥락을 제공
+• 구체적 수치(날짜, 금액, 퍼센트, 인원수 등)를 반드시 포함
+• 관련 전문가/기관의 입장이나 발언을 인용 (취재 자료에 있으면 활용)
+• 비교 분석: 이전 사례, 유사 사건, 과거 데이터와 비교하여 의미 도출
+• 독자가 "이 기사 하나로 충분하다"고 느낄 수 있는 완결성
 
 【반드시 한국어로만 작성】
 • 영어 제목, 영어 문장은 절대 그대로 포함하지 마세요
 • 외국 뉴스라도 반드시 한국어로 번역/의역하여 작성
 • 고유명사(인명, 기관명)만 영어 병기 가능: 예) 바이트댄스(ByteDance)
 
-【기사 구조 (필수)】
-1. **도입부** (2~3문장): 무슨 일인지 핵심을 즉시 전달. "누가, 무엇을, 왜"
-2. **## 주요 내용** (3~4문단): 구체적 사실, 숫자, 인용을 포함한 상세 내용
-3. **## 배경** (1~2문단): 이 이슈가 왜 중요한지, 맥락 설명  
-4. **## 향후 전망** (1~2문단): 앞으로 어떻게 될지
+【기사 구조 (필수 — 각 섹션 충실히)】
+1. **도입부** (3~4문장): 6하원칙(누가·무엇을·언제·어디서·왜·어떻게)으로 핵심 전달. 첫 문장에 키워드 포함.
+2. **## 주요 내용** (4~6문단): 취재 자료의 구체적 사실·숫자·인용을 빠짐없이 활용. 단순 나열 금지, 문단별로 하나의 논점을 깊이 있게 서술.
+3. **## 배경** (2~3문단): 이 이슈의 역사적·사회적 맥락. 과거 유사 사례나 관련 통계 포함.
+4. **## 향후 전망** (2~3문단): 전문가 전망, 예상되는 파급 효과, 독자가 주의해야 할 점.
 
 【문체 규칙】
 • 보도체: "~것으로 전해졌다", "~라고 밝혔다", "~한 것으로 나타났다"
-• 문장당 20~40자, 최대 50자
+• 문장당 20~40자. 긴 문장은 두 문장으로 분리
 • 사실 기반 서술. 추측은 "~것으로 보인다", "~전망이다"로 표현
-• 금지: 블로그체(~인데요), 낚시제목(충격, 경악), 동어반복
+• 금지: 블로그체(~인데요, ~거든요, ~알아보겠습니다), 낚시 표현(충격, 경악, 소름, 역대급), 동어반복, "~에 대해 살펴보겠습니다"
+• 각 문단 시작을 다양하게 (같은 주어로 연속 시작 금지)
+
+【차별화 포인트】
+• 다른 기사에서 볼 수 없는 "분석적 시각"을 최소 1개 포함
+• 숫자가 있으면 맥락을 추가: "매출 100억원(전년 대비 30% 증가)"
+• 원인→결과→영향의 논리적 흐름으로 구성
+• 독자 실생활과 연결: "소비자/시민/투자자에게 미치는 영향"
 
 【분량】
-• 전체 800~1500자 (공백 포함)
-• 소제목 2~3개
+• 전체 1200~2000자 (공백 포함) — 충분히 깊이 있게
+• 소제목 3개 (주요 내용, 배경, 향후 전망)
+
+【SEO 최적화 제목】
+• 키워드를 제목 앞쪽에 자연스럽게 배치
+• "누가 무엇했다" 형태의 구체적 제목 (모호한 "~관련 이슈" 금지)
+• 25~45자, 검색 의도에 정확히 부합
 
 【출력 형식】
-TITLE: (한국어 제목 25~40자, 핵심 키워드 앞쪽 배치)
-SUMMARY: (한국어 요약 60~100자)
-TAGS: (태그 3~5개, 쉼표 구분)
+TITLE: (한국어 제목)
+SUMMARY: (한국어 요약 80~120자, 기사의 핵심 팩트 포함)
+TAGS: (태그 4~6개, 쉼표 구분)
 CONTENT:
 (마크다운 본문)`;
 }
@@ -193,27 +212,35 @@ function getUserPrompt(keyword, newsContext) {
   return `현재 시각: ${dateTime}
 실시간 트렌딩 키워드: "${keyword}"
 
-아래는 이 키워드 관련 취재 자료입니다. 이 자료를 바탕으로 기사를 작성하세요.
+아래는 이 키워드 관련 취재 자료입니다. 모든 자료를 꼼꼼히 읽고, 핵심 팩트를 빠짐없이 반영하세요.
 자료에 영어가 있으면 반드시 한국어로 번역하여 작성하세요.
 
 ━━━ 취재 자료 ━━━
 ${newsContext || '(관련 뉴스 자료 없음. 키워드와 일반 상식을 바탕으로 작성하세요.)'}
 ━━━━━━━━━━━━━━
 
-위 자료를 종합하여 독자가 한눈에 상황을 파악할 수 있는 뉴스 기사를 작성하세요.
+위 자료를 종합하여 **심층 분석 기사**를 작성하세요.
 
-⚠️ 중요:
-- 반드시 한국어로만 작성 (영어 문장 금지)
-- 취재 자료의 제목/내용을 그대로 복사하지 말 것 (재구성)
-- 도입부에서 "무슨 일인지"를 바로 설명할 것
-- 출처명(Vietnam.vn, kmjournal 등)을 본문에 넣지 말 것
+⚠️ 필수 체크리스트:
+1. 취재 자료의 구체적 수치·날짜·인명을 기사에 반영했는가?
+2. 단순 나열이 아닌 원인→결과→영향 흐름으로 서술했는가?
+3. "배경" 섹션에서 과거 맥락이나 비교 분석을 했는가?
+4. "향후 전망"에서 실질적 전망과 독자 영향을 서술했는가?
+5. 1200자 이상 작성했는가?
+6. 모든 내용이 한국어인가?
+
+⚠️ 금지사항:
+- 취재 자료의 문장을 그대로 복사 (반드시 재구성)
+- 출처명(Vietnam.vn, kmjournal 등) 본문 삽입
+- "~에 대해 알아보겠습니다" 등 블로그 표현
+- 동일한 내용 반복 서술
 
 형식:
-TITLE: (제목)
-SUMMARY: (요약)
-TAGS: (태그)
+TITLE: (제목 — 키워드를 앞에 배치, 구체적)
+SUMMARY: (80~120자 요약 — 핵심 팩트 포함)
+TAGS: (태그 4~6개)
 CONTENT:
-(본문)`;
+(본문 — 1200자 이상, 소제목 3개)`;
 }
 
 // ========== 기사 출력 파싱 ==========
@@ -259,41 +286,120 @@ function parseArticleOutput(output, keyword) {
   return { title, summary, tags, content };
 }
 
-// ========== 기사 품질 검증 ==========
-function validateArticleQuality(content) {
+// ========== 기사 품질 검증 (강화) ==========
+function validateArticleQuality(content, title, summary) {
   const issues = [];
+  let score = 100;
 
-  // 본문 길이 검사 (축약형: 300자 이상)
-  if (content.length < 300) {
-    issues.push(`본문 너무 짧음 (${content.length}자, 최소 300자)`);
+  // === 1. 기본 길이 검사 ===
+  if (content.length < 600) {
+    issues.push(`본문 너무 짧음 (${content.length}자, 최소 600자)`);
+    score -= 30;
+  } else if (content.length < 1000) {
+    issues.push(`본문 부족 (${content.length}자, 권장 1200자 이상)`);
+    score -= 15;
   }
 
-  // 소제목 개수 검사
+  // === 2. 구조 검사 ===
   const headingCount = (content.match(/^##\s/gm) || []).length;
   if (headingCount < 2) {
-    issues.push(`소제목 부족 (${headingCount}개, 최소 2개 권장)`);
+    issues.push(`소제목 부족 (${headingCount}개, 최소 3개 필수)`);
+    score -= 20;
   }
 
-  // 문단 개수 검사
-  const paragraphs = content.split(/\n\n+/).filter(p => p.trim().length > 20);
-  if (paragraphs.length < 3) {
-    issues.push(`문단 부족 (${paragraphs.length}개, 최소 3개 권장)`);
+  // 필수 섹션 체크
+  const hasMainContent = /##\s*(주요\s*내용|핵심|상세)/m.test(content);
+  const hasBackground = /##\s*(배경|맥락|경위)/m.test(content);
+  const hasOutlook = /##\s*(향후\s*전망|전망|앞으로|시사점)/m.test(content);
+  
+  if (!hasMainContent) { issues.push('\"주요 내용\" 섹션 누락'); score -= 10; }
+  if (!hasBackground) { issues.push('\"배경\" 섹션 누락'); score -= 10; }
+  if (!hasOutlook) { issues.push('\"향후 전망\" 섹션 누락'); score -= 10; }
+
+  // 문단 수 검사
+  const paragraphs = content.split(/\n\n+/).filter(p => p.trim().length > 30 && !p.trim().startsWith('#'));
+  if (paragraphs.length < 4) {
+    issues.push(`문단 부족 (${paragraphs.length}개, 최소 5개 권장)`);
+    score -= 10;
   }
 
-  // 블로그체 감지
+  // === 3. 콘텐츠 깊이 검사 ===
+  // 구체적 숫자/데이터 포함 여부
+  const numberPattern = /\d+[%만억원조개명건호]/g;
+  const numberCount = (content.match(numberPattern) || []).length;
+  if (numberCount < 2) {
+    issues.push(`구체적 수치 부족 (${numberCount}개, 최소 2개 권장)`);
+    score -= 10;
+  }
+
+  // 인용/발언 포함 여부
+  const quotePatterns = /["""](.*?)["""]|~라고\s+(밝혔|말했|전했|설명했|강조했)|~라며|~입장을\s*밝혔/g;
+  const quoteCount = (content.match(quotePatterns) || []).length;
+  if (quoteCount === 0) {
+    score -= 5; // 인용 없으면 소폭 감점
+  }
+
+  // === 4. 문체 검사 ===
   const blogPatterns = [
     /인데요/g, /거든요/g, /했어요/g, /알아보겠/g, /살펴보겠/g,
-    /알아볼까요/g, /하셨나요/g, /드리겠/g,
+    /알아볼까요/g, /하셨나요/g, /드리겠/g, /해볼게요/g, /할게요/g,
+    /살펴보도록/g, /알아보도록/g,
   ];
   const blogHits = blogPatterns.reduce((sum, p) => sum + (content.match(p) || []).length, 0);
   if (blogHits > 0) {
     issues.push(`비보도체 표현 ${blogHits}건 감지`);
+    score -= blogHits * 5;
   }
 
+  // 낚시성 표현 감지
+  const clickbaitPatterns = /충격|경악|소름|대박|역대급|ㅋ|ㅎ|ㅠ|!!!/g;
+  const clickbaitHits = (content.match(clickbaitPatterns) || []).length;
+  if (clickbaitHits > 0) {
+    issues.push(`낚시성 표현 ${clickbaitHits}건 감지`);
+    score -= clickbaitHits * 5;
+  }
+
+  // === 5. 중복 문장 검사 ===
+  const sentences = content.split(/[.다]\s/).filter(s => s.length > 15);
+  const sentenceSet = new Set();
+  let dupeCount = 0;
+  for (const s of sentences) {
+    const normalized = s.replace(/\s+/g, '').substring(0, 30);
+    if (sentenceSet.has(normalized)) dupeCount++;
+    sentenceSet.add(normalized);
+  }
+  if (dupeCount > 1) {
+    issues.push(`중복 문장 ${dupeCount}건`);
+    score -= dupeCount * 10;
+  }
+
+  // === 6. 영어 비율 검사 ===
+  const englishRatio = (content.match(/[a-zA-Z]/g) || []).length / Math.max(content.length, 1);
+  if (englishRatio > 0.15) {
+    issues.push(`영어 비율 과다 (${(englishRatio * 100).toFixed(1)}%)`);
+    score -= 15;
+  }
+
+  // === 7. 제목/요약 품질 ===
+  if (title) {
+    if (title.length < 15) { issues.push('제목 너무 짧음'); score -= 5; }
+    if (/관련\s*(최신\s*)?동향|이슈\s*총정리|실시간\s*트렌드/i.test(title)) {
+      issues.push('제목이 뻔함 (구체적 제목 필요)');
+      score -= 10;
+    }
+  }
+  if (summary && summary.length < 40) {
+    issues.push('요약 너무 짧음');
+    score -= 5;
+  }
+
+  score = Math.max(0, Math.min(100, score));
+
   return {
-    passed: issues.length === 0,
+    passed: score >= 60,
     issues,
-    score: Math.max(0, 100 - issues.length * 20),
+    score,
+    grade: score >= 85 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : 'D',
   };
 }
 
@@ -312,6 +418,8 @@ function postProcessContent(content) {
     [/에 대해 알아보겠습니다[.!]?/g, '에 대해 짚어본다.'],
     [/살펴보도록 하겠습니다[.!]?/g, '살펴본다.'],
     [/알아보도록 하겠습니다[.!]?/g, '알아본다.'],
+    [/살펴보겠습니다[.!]?/g, '살펴본다.'],
+    [/알아보겠습니다[.!]?/g, '알아본다.'],
   ];
 
   replacements.forEach(([pattern, replacement]) => {
@@ -328,6 +436,22 @@ function postProcessContent(content) {
   // 잘린 영어 문장 제거 (예: "Seedance 2." 같은 것)
   processed = processed.replace(/[A-Za-z]{2,}[^가-힣\n]{0,5}\.\s*$/gm, '');
 
+  // "~에 대해 살펴보겠습니다" 류의 블로그 마무리 제거
+  processed = processed.replace(/지금부터\s*(자세히|하나씩|본격적으로)\s*(살펴|알아|분석).*\n?/g, '');
+  processed = processed.replace(/이번\s*(기사|글)에서는.*살펴.*\n?/g, '');
+  
+  // 동어반복 축약 (같은 문장이 비슷하게 반복되는 경우)
+  const lines = processed.split('\n');
+  const deduped = [];
+  const seenPhrases = new Set();
+  for (const line of lines) {
+    const normalized = line.replace(/\s+/g, '').substring(0, 40);
+    if (normalized.length > 20 && seenPhrases.has(normalized)) continue;
+    if (normalized.length > 20) seenPhrases.add(normalized);
+    deduped.push(line);
+  }
+  processed = deduped.join('\n');
+
   // 불필요한 빈 줄 정리
   processed = processed.replace(/\n{4,}/g, '\n\n\n');
 
@@ -337,7 +461,33 @@ function postProcessContent(content) {
   // 빈 불릿 항목 제거
   processed = processed.replace(/^[•\-\*]\s*\*?\*?\s*\*?\*?\s*$/gm, '');
 
+  // 선두 빈줄 제거
+  processed = processed.replace(/^\n+/, '');
+
   return processed.trim();
+}
+
+// ========== 제목 개선 (뻔한 제목 감지 시) ==========
+async function improveTitle(aiClient, keyword, content, currentTitle) {
+  try {
+    const response = await aiClient.chat.completions.create({
+      model: getModel(),
+      messages: [
+        { role: 'system', content: '뉴스 편집자입니다. 구체적이고 클릭하고 싶은 한국어 뉴스 제목 1개만 출력하세요. 25~45자. 키워드를 앞쪽에 배치하세요. 설명 없이 제목만 출력.' },
+        { role: 'user', content: `키워드: "${keyword}"\n기사 본문 요약:\n${content.substring(0, 500)}\n\n현재 제목(너무 뻔함): "${currentTitle}"\n\n더 구체적이고 흥미로운 제목을 1개만 출력:` },
+      ],
+      temperature: 0.5,
+      max_tokens: 100,
+    });
+    const newTitle = (response.choices[0]?.message?.content || '').trim().replace(/^["'#]+|["']+$/g, '');
+    if (newTitle.length >= 15 && newTitle.length <= 50) {
+      logger.info(`[AI] 제목 개선: "${currentTitle}" → "${newTitle}"`);
+      return newTitle;
+    }
+  } catch (e) {
+    logger.debug(`[AI] 제목 개선 실패: ${e.message}`);
+  }
+  return currentTitle;
 }
 
 // ========== SEO 최적화 기사 생성 (메인) ==========
@@ -353,7 +503,7 @@ async function generateArticle(keyword, newsData) {
   }
 
   try {
-    logger.info(`[AI] "${keyword}" 전문 기사 생성 시작...`);
+    logger.info(`[AI] "${keyword}" 고품질 기사 생성 시작...`);
 
     // 풍부한 뉴스 컨텍스트 구성
     const newsContext = buildNewsContext(keyword, newsData);
@@ -367,33 +517,47 @@ async function generateArticle(keyword, newsData) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0.4,  // 팩트 중심, 보도체에 적합한 낮은 온도
+      temperature: 0.35, // 팩트 중심, 살짝 더 보수적
       max_tokens: 4096,
-      top_p: 0.9,
-      frequency_penalty: 0.3,  // 동어반복 방지
-      presence_penalty: 0.2,   // 다양한 표현 유도
+      top_p: 0.85,
+      frequency_penalty: 0.4,  // 동어반복 강하게 억제
+      presence_penalty: 0.3,   // 새로운 주제/표현 유도
     });
 
     const rawOutput = response.choices[0]?.message?.content || '';
     logger.debug(`[AI] 원본 출력 길이: ${rawOutput.length}자`);
 
     // 파싱
-    const { title, summary, tags, content: parsedContent } = parseArticleOutput(rawOutput, keyword);
+    let { title, summary, tags, content: parsedContent } = parseArticleOutput(rawOutput, keyword);
 
     // 후처리
-    const content = postProcessContent(parsedContent);
+    let content = postProcessContent(parsedContent);
 
-    // 품질 검증
-    const quality = validateArticleQuality(content);
-    if (!quality.passed) {
-      logger.warn(`[AI] 품질 검증 이슈: ${quality.issues.join(', ')} (점수: ${quality.score})`);
+    // 1차 품질 검증
+    let quality = validateArticleQuality(content, title, summary);
+    logger.info(`[AI] 1차 품질: ${quality.grade} (${quality.score}점) ${quality.issues.length > 0 ? '이슈: ' + quality.issues.join(', ') : ''}`);
+
+    // 품질 미달(D등급) + 본문 짧을 때 보강 시도
+    if (quality.score < 60 && content.length < 800) {
+      logger.info(`[AI] 품질 미달 → 기사 보강 시도 중...`);
+      const enhanced = await enhanceArticle(aiClient, keyword, content, newsContext);
+      if (enhanced && enhanced.length > content.length) {
+        content = postProcessContent(enhanced);
+        quality = validateArticleQuality(content, title, summary);
+        logger.info(`[AI] 보강 후 품질: ${quality.grade} (${quality.score}점)`);
+      }
+    }
+
+    // 제목이 뻔하면 개선 시도
+    if (/관련\s*(최신\s*)?동향|이슈\s*총정리|실시간\s*트렌드/i.test(title)) {
+      title = await improveTitle(aiClient, keyword, content, title);
     }
 
     const slug = generateSlug(title);
-    const sourceUrls = newsData?.articles?.map(a => a.link).filter(Boolean) || [];
+    const sourceUrls = (newsData?.articles?.map(a => a.link).filter(Boolean) || []).filter(u => !u.includes('news.google.com/rss'));
     const image = newsData?.representativeImage || '';
 
-    logger.info(`[AI] "${keyword}" 기사 생성 완료: "${title}" (${content.length}자, 품질: ${quality.score}점, 이미지: ${image ? 'O' : 'X'})`);
+    logger.info(`[AI] "${keyword}" 기사 생성 완료: "${title}" (${content.length}자, 품질: ${quality.grade}/${quality.score}점, 이미지: ${image ? 'O' : 'X'})`);
 
     return {
       title,
@@ -429,7 +593,7 @@ async function generateArticle(keyword, newsData) {
   }
 }
 
-// ========== 기사 보강 (2차 호출) ==========
+// ========== 기사 보강 (2차 호출 — 품질 미달 시) ==========
 async function enhanceArticle(aiClient, keyword, shortContent, newsContext) {
   try {
     const response = await aiClient.chat.completions.create({
@@ -437,18 +601,27 @@ async function enhanceArticle(aiClient, keyword, shortContent, newsContext) {
       messages: [
         {
           role: 'system',
-          content: `당신은 뉴스 편집자입니다. 아래 기사 초안이 너무 짧습니다. 
-동일한 톤과 문체를 유지하면서 내용을 1500자 이상으로 보강해주세요.
-추가할 내용: 배경 설명, 전문가 분석, 수치/데이터, 향후 전망 등.
-결과는 마크다운 본문만 출력하세요.`,
+          content: `당신은 경력 10년차 뉴스 편집자입니다. 아래 기사 초안을 전면 보강해야 합니다.
+
+보강 방향:
+1. 분량을 1500자 이상으로 확대
+2. "## 주요 내용" (4~6문단), "## 배경" (2문단), "## 향후 전망" (2문단) 구조 충실
+3. 구체적 수치, 날짜, 인명 등 팩트를 취재 자료에서 최대한 반영
+4. 원인→결과→파급효과 흐름으로 논리적 서술
+5. 보도체 유지 ("~것으로 전해졌다", "~것으로 나타났다")
+6. 반드시 한국어로만 작성
+
+결과는 마크다운 본문만 출력하세요. TITLE/SUMMARY/TAGS 없이 본문만.`,
         },
         {
           role: 'user',
-          content: `키워드: "${keyword}"\n\n참고 뉴스 자료:\n${newsContext}\n\n기사 초안:\n${shortContent}\n\n위 초안을 1500자 이상의 완성된 뉴스 기사로 보강해주세요.`,
+          content: `키워드: "${keyword}"\n\n참고 뉴스 자료:\n${newsContext}\n\n기사 초안 (보강 필요):\n${shortContent}\n\n위 초안을 1500자 이상, 3개 소제목을 갖춘 완성된 뉴스 기사로 보강해주세요.`,
         },
       ],
-      temperature: 0.4,
+      temperature: 0.35,
       max_tokens: 4096,
+      frequency_penalty: 0.4,
+      presence_penalty: 0.3,
     });
 
     return response.choices[0]?.message?.content || '';

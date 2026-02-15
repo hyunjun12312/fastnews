@@ -81,8 +81,13 @@ async function runPipeline() {
       kw.keyword = cleanKeywordText(kw.keyword);
       if (!kw.keyword || kw.keyword.length < 2) continue;
 
-      // 최근 6시간 내에 이미 있는 키워드는 스킵
-      if (!db.isKeywordRecent(kw.keyword, 6)) {
+      // 키워드 품질 2차 검증 (크롤러에서 누락된 쓰레기 차단)
+      if (kw.keyword.length > 15) continue;
+      if (/['\"''""」]/.test(kw.keyword)) continue;
+      if (/(?:까지|에서|으로|에게|부터|라는|라고|하는|되는|있는|없는)$/.test(kw.keyword)) continue;
+
+      // 최근 2시간 내에 이미 있는 키워드는 스킵 (실검은 빠르게 변하므로 짧게)
+      if (!db.isKeywordRecent(kw.keyword, 2)) {
         const result = db.insertKeyword(kw.keyword, kw.source, kw.rank);
         if (result.changes > 0) {
           newKeywordsCount++;
@@ -172,7 +177,8 @@ async function runPipeline() {
         if (status === 'published') {
           const savedArticle = db.getArticleById(result.lastInsertRowid);
           const trendKws = keywords.map(k => k.keyword);
-          publisher.publishArticle(savedArticle, trendKws);
+          const allPublished = db.getArticles({ status: 'published', limit: 20 });
+          publisher.publishArticle(savedArticle, trendKws, allPublished);
 
           dashboard.emitEvent('newArticle', {
             id: result.lastInsertRowid,

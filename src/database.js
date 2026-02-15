@@ -197,7 +197,11 @@ function getTodayArticleCount() {
 }
 
 function hasArticleForKeyword(keyword) {
-  const row = queryOne('SELECT COUNT(*) as cnt FROM articles WHERE keyword = ?', [keyword]);
+  // 최근 3시간 내에 같은 키워드로 기사가 있으면 중복 (시간 지나면 재생성 가능)
+  const row = queryOne(
+    `SELECT COUNT(*) as cnt FROM articles WHERE keyword = ? AND created_at >= datetime('now', '-3 hours', 'localtime')`,
+    [keyword]
+  );
   return row && row.cnt > 0;
 }
 
@@ -244,6 +248,7 @@ function deleteArticlesWithLongKeywords(maxLen = 15) {
 // 쓰레기 키워드 기사 삭제 (일반 명사, 숫자 등 부적합 키워드)
 function deleteArticlesWithGarbageKeywords() {
   const garbageKeywords = [
+    // 원본 쓰레기
     '지지', '투사', '어린', '충격', '투기', '자연', '세대', '미국', '중국', '일본',
     '한국', '북한', '하는', '올라가', '되는', '있는', '없는', '같은', '나오는',
     '한국인', '외국인', '국내', '해외', '정부', '국회', '여당', '야당',
@@ -255,12 +260,21 @@ function deleteArticlesWithGarbageKeywords() {
     '바닥론', '소속', '돌연', '결국', '사실',
     '여전히', '구성', '정상', '정거장', '개인비서', '자료정리', '구조분석',
     '이어트', '코르티스',
+    // 사이트에서 발견된 추가 쓰레기
+    '나라', '금하지', '이틀', '그들', '이웃', '생활양식', '공항', '주인공',
+    '조상님', '자기야', '제사상', '오빠', '변호사', '여야', '충남도',
+    '투사 배현진', '많이 좋아해', '설 연휴 맞아', '파산까지',
+    '뛰노',
   ];
   const placeholders = garbageKeywords.map(() => '?').join(',');
   const result1 = runSql(`DELETE FROM articles WHERE keyword IN (${placeholders})`, garbageKeywords);
   // 순수 숫자 키워드 삭제
   const result2 = runSql("DELETE FROM articles WHERE keyword GLOB '[0-9]*' AND keyword NOT GLOB '*[^0-9]*'");
-  return { changes: (result1?.changes || 0) + (result2?.changes || 0) };
+  // 조사로 끝나는 키워드 삭제 (까지, 에서, 으로 등)
+  const result3 = runSql("DELETE FROM articles WHERE keyword LIKE '%까지' OR keyword LIKE '%에서' OR keyword LIKE '%으로'");
+  // 따옴표가 포함된 키워드 삭제
+  const result4 = runSql("DELETE FROM articles WHERE keyword LIKE '%''%'");
+  return { changes: (result1?.changes || 0) + (result2?.changes || 0) + (result3?.changes || 0) + (result4?.changes || 0) };
 }
 
 // 키워드 정제된 값으로 업데이트

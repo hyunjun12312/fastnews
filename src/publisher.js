@@ -707,7 +707,7 @@ function footerHTML() {
         </div>
         <div class="footer-links">
           <a href="/">홈</a>
-          <a href="/archive">전체기사</a>
+          <a href="/">전체기사</a>
           <a href="/rss.xml">RSS</a>
           <a href="/sitemap.xml">사이트맵</a>
         </div>
@@ -718,7 +718,7 @@ function footerHTML() {
 }
 
 // ========== 기사 상세 페이지 ==========
-function articleTemplate(article, trendKeywords) {
+function articleTemplate(article, trendKeywords, relatedArticles) {
   const htmlContent = marked(article.content || '');
   const publishDateRaw = article.published_at || article.created_at || new Date().toISOString();
   const parsedDate = new Date(publishDateRaw);
@@ -822,10 +822,14 @@ function articleTemplate(article, trendKeywords) {
         ${htmlContent}
       </div>
 
-      ${sourceUrls.length > 0 ? `
+      ${sourceUrls.filter(u => !u.includes('news.google.com/rss')).length > 0 ? `
       <div class="article-sources">
         <strong>참고 자료</strong>
-        ${sourceUrls.slice(0, 5).map(url => `<div style="margin-top:4px;"><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(url.substring(0, 80))}${url.length > 80 ? '...' : ''}</a></div>`).join('')}
+        ${sourceUrls.filter(u => !u.includes('news.google.com/rss')).slice(0, 5).map(url => {
+          let displayUrl;
+          try { displayUrl = new URL(url).hostname + new URL(url).pathname.substring(0, 40); } catch { displayUrl = url.substring(0, 60); }
+          return `<div style="margin-top:4px;"><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(displayUrl)}...</a></div>`;
+        }).join('')}
       </div>` : ''}
 
       <div class="article-share">
@@ -835,6 +839,24 @@ function articleTemplate(article, trendKeywords) {
         <button class="share-btn share-cp" onclick="navigator.clipboard.writeText(location.href);this.textContent='복사됨';">링크복사</button>
       </div>
     </article>
+
+    ${(relatedArticles && relatedArticles.length > 0) ? `
+    <div style="max-width:680px;margin:20px auto 0;padding:0 20px;">
+      <div class="section-title"><span class="bar"></span> 관련 기사</div>
+      <div class="article-list">
+        ${relatedArticles.slice(0, 5).map(ra => `
+        <a class="article-item" href="/articles/${ra.slug}.html">
+          ${ra.image
+            ? `<img class="article-thumb" src="${escapeHtml(ra.image)}" alt="${escapeHtml(ra.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=\\'article-thumb-empty\\'>${THUMB_SVG}</div>'">`
+            : `<div class="article-thumb-empty">${THUMB_SVG}</div>`}
+          <div class="article-info">
+            <div class="article-kw">${escapeHtml(ra.keyword || '')}</div>
+            <h3 class="article-title">${escapeHtml(ra.title)}</h3>
+            <div class="article-time">${timeAgo(ra.published_at || ra.created_at)}</div>
+          </div>
+        </a>`).join('\n')}
+      </div>
+    </div>` : ''}
   </div>
 
   ${footerHTML()}
@@ -1199,12 +1221,20 @@ async function pingSearchEngines(articleUrl) {
 }
 
 // ========== 퍼블리시 ==========
-function publishArticle(article, trendKeywords) {
+function publishArticle(article, trendKeywords, allArticles) {
   try {
-    const html = articleTemplate(article, trendKeywords || []);
+    // 관련 기사 추출: 최근 기사 중 현재 기사 제외
+    let relatedArticles = [];
+    if (allArticles && allArticles.length > 0) {
+      relatedArticles = allArticles
+        .filter(a => a.slug !== article.slug && a.title !== article.title)
+        .slice(0, 5);
+    }
+
+    const html = articleTemplate(article, trendKeywords || [], relatedArticles);
     const filePath = path.join(ARTICLES_DIR, `${article.slug}.html`);
     fs.writeFileSync(filePath, html, 'utf8');
-    logger.info(`[퍼블리셔] 기사 발행: ${article.slug}.html`);
+    logger.info(`[퍼블리셔] 기사 발행: ${article.slug}.html (관련기사 ${relatedArticles.length}개)`);
 
     const articleUrl = `${config.site.url}/articles/${article.slug}.html`;
     pingSearchEngines(articleUrl).catch(() => {});
