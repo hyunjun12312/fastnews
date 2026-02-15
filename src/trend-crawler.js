@@ -439,4 +439,5 @@ module.exports = {
   crawlNate,
   crawlSignalBz,
   crawlAll,
+  isGoodKeyword,
 };
