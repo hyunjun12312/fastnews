@@ -41,7 +41,16 @@ function getClient() {
 
 function getModel() {
   const provider = config.ai.provider || 'deepseek';
-  return config.ai.model || (PROVIDER_CONFIG[provider] || PROVIDER_CONFIG.deepseek).defaultModel;
+  const configModel = config.ai.model || '';
+  const providerDefault = (PROVIDER_CONFIG[provider] || PROVIDER_CONFIG.deepseek).defaultModel;
+
+  // DeepSeek provider인데 OpenAI 모델명이 설정된 경우 자동 교정
+  if (provider === 'deepseek' && configModel && (configModel.startsWith('gpt-') || configModel.startsWith('o1') || configModel.startsWith('o3'))) {
+    logger.warn(`[AI] ⚠️ DeepSeek provider에 OpenAI 모델(${configModel}) 감지 → "${providerDefault}"로 자동 교정`);
+    return providerDefault;
+  }
+
+  return configModel || providerDefault;
 }
 
 // ========== 슬러그 생성 ==========
@@ -79,70 +88,95 @@ function getKoreanDateTime() {
 function buildNewsContext(keyword, newsData) {
   const sections = [];
 
-  // 1. 본문이 있는 상세 기사 (최대 2000자씩)
+  // 1. 본문이 있는 상세 기사 (최대 2000자씩) — 한국어 우선
   if (newsData?.topArticlesWithContent?.length > 0) {
-    const detailed = newsData.topArticlesWithContent.filter(a => a.fullContent && a.fullContent.length > 50);
+    const detailed = newsData.topArticlesWithContent
+      .filter(a => a.fullContent && a.fullContent.length > 50)
+      .sort((a, b) => {
+        // 한국어 비율이 높은 기사 우선
+        const koreanRatioA = (a.fullContent.match(/[가-힣]/g) || []).length / a.fullContent.length;
+        const koreanRatioB = (b.fullContent.match(/[가-힣]/g) || []).length / b.fullContent.length;
+        return koreanRatioB - koreanRatioA;
+      });
     if (detailed.length > 0) {
       sections.push('=== 상세 취재 기사 ===');
-      detailed.forEach((a, i) => {
-        const content = a.fullContent.substring(0, 2000);
-        sections.push(`\n[기사 ${i + 1}] 제목: ${a.title}\n출처: ${a.source || '뉴스'}\n발행: ${a.pubDate || '최근'}\n본문:\n${content}`);
+      detailed.slice(0, 3).forEach((a, i) => {
+        const content = cleanNewsText(a.fullContent).substring(0, 2000);
+        if (content.length > 50) {
+          sections.push(`\n[기사 ${i + 1}] 제목: ${cleanNewsText(a.title)}\n본문:\n${content}`);
+        }
       });
     }
   }
 
-  // 2. 헤드라인 + 요약 기사들
+  // 2. 헤드라인 + 요약 기사들 (한국어 기사 우선)
   if (newsData?.articles?.length > 0) {
+    const koreanArticles = newsData.articles.filter(a => {
+      const title = a.title || '';
+      return (title.match(/[가-힣]/g) || []).length > title.length * 0.2;
+    });
+    const articlesToUse = koreanArticles.length >= 3 ? koreanArticles : newsData.articles;
+    
     sections.push('\n=== 관련 뉴스 헤드라인 ===');
-    newsData.articles.slice(0, 8).forEach((a, i) => {
-      const desc = a.description ? ` — ${a.description}` : '';
-      sections.push(`${i + 1}. [${a.source || '뉴스'}] ${a.title}${desc}`);
+    articlesToUse.slice(0, 8).forEach((a, i) => {
+      const cleanTitle = cleanNewsText(a.title);
+      const cleanDesc = a.description ? cleanNewsText(a.description) : '';
+      const desc = cleanDesc ? ` — ${cleanDesc}` : '';
+      sections.push(`${i + 1}. ${cleanTitle}${desc}`);
     });
   }
 
   return sections.join('\n');
 }
 
-// ========== 시스템 프롬프트 (빠른 이해 + 가독성 중심) ==========
+// ========== 뉴스 텍스트 정제 ==========
+function cleanNewsText(text) {
+  if (!text) return '';
+  return text
+    .replace(/<[^>]*>/g, '')                    // HTML 태그 제거
+    .replace(/\s{2,}/g, ' ')                    // 다중 공백
+    .replace(/\n{3,}/g, '\n\n')                 // 다중 줄바꿈
+    .replace(/\[.*?기자\]/g, '')                 // [OOO 기자] 제거
+    .replace(/\(.*?@.*?\)/g, '')                 // (이메일) 제거
+    .replace(/Copyright.*$/gim, '')              // 저작권 문구 제거
+    .replace(/ⓒ.*$/gim, '')                     // ⓒ 저작권
+    .replace(/무단.*전재.*금지/g, '')              // 무단전재 금지
+    .replace(/▶.*$/gm, '')                       // ▶ 관련기사 링크
+    .trim();
+}
+
+// ========== 시스템 프롬프트 ==========
 function getSystemPrompt() {
-  return `당신은 대한민국 토프 뉴스 편집자입니다.
-실시간 검색어를 본 독자가 30초 이내에 핵심을 파악할 수 있도록 작성합니다.
+  return `당신은 대한민국 1위 뉴스 포털의 수석 편집기자입니다.
+실시간 검색어를 클릭한 독자가 "아, 이게 이런 일이구나"하고 바로 이해할 수 있는 기사를 작성합니다.
 
-━━━ 작성 원칙 (30초 규칙) ━━━
+━━━ 핵심 원칙 ━━━
 
-【구조: 빠른 이해 콜드와 포맷】
-1. 핵심 요약 (3줄 이내): 이 이슈가 뭔데를 한 눈에 설명
-2. 핵심 포인트 (3~5개): 불릿 포인트로 정리, 각 1~2문장
-3. 상세 내용: 배경과 맥락을 2~3문단으로 간결하게
-4. 전망/의미: 2~3문장으로 마무리
+【반드시 한국어로만 작성】
+• 영어 제목, 영어 문장은 절대 그대로 포함하지 마세요
+• 외국 뉴스라도 반드시 한국어로 번역/의역하여 작성
+• 고유명사(인명, 기관명)만 영어 병기 가능: 예) 바이트댄스(ByteDance)
 
-【문체】
-• 간결하고 명쾌한 보도체 ("~한 것으로 나타났다", "~라고 밝혔다")
-• 한 문장은 30자 이내 권장 (50자 초과 금지)
-• 불필요한 형용사/부사 제거, 압축적 서술
-• 블로그체/SNS체 금지 ("~인데요", "~거든요" 금지)
-• 낚시성 표현 금지 ("충격", "경악", "발칵" 금지)
+【기사 구조 (필수)】
+1. **도입부** (2~3문장): 무슨 일인지 핵심을 즉시 전달. "누가, 무엇을, 왜"
+2. **## 주요 내용** (3~4문단): 구체적 사실, 숫자, 인용을 포함한 상세 내용
+3. **## 배경** (1~2문단): 이 이슈가 왜 중요한지, 맥락 설명  
+4. **## 향후 전망** (1~2문단): 앞으로 어떻게 될지
 
-【양】
-• 전체 600~1000자 (공백 포함)
-• 소제목(##) 2~3개, 각 소제목에 구체적 정보 포함
-• 핑심 포인트는 불릿(•) 사용, 간결하게
+【문체 규칙】
+• 보도체: "~것으로 전해졌다", "~라고 밝혔다", "~한 것으로 나타났다"
+• 문장당 20~40자, 최대 50자
+• 사실 기반 서술. 추측은 "~것으로 보인다", "~전망이다"로 표현
+• 금지: 블로그체(~인데요), 낚시제목(충격, 경악), 동어반복
 
-【SEO】
-• 제목: 핵심 키워드 앞쪽 배치, 25~40자
-• 요약: 60~100자로 핵심 파악 가능
-• 첫 문단에 키워드 자연스럽게 포함
+【분량】
+• 전체 800~1500자 (공백 포함)
+• 소제목 2~3개
 
-【절대 금지】
-• "~에 대해 살펴보겠습니다" 같은 비전문적 전환문 ❌
-• AI 작성 언급 ❌
-• 동어반복 ❌
-• 원문 그대로 복사 ❌
-
-결과물 형식:
-TITLE: (제목)
-SUMMARY: (요약 60~100자)
-TAGS: (관련 태그 3~5개, 쉼표 구분)
+【출력 형식】
+TITLE: (한국어 제목 25~40자, 핵심 키워드 앞쪽 배치)
+SUMMARY: (한국어 요약 60~100자)
+TAGS: (태그 3~5개, 쉼표 구분)
 CONTENT:
 (마크다운 본문)`;
 }
@@ -154,24 +188,27 @@ function getUserPrompt(keyword, newsContext) {
   return `현재 시각: ${dateTime}
 실시간 트렌딩 키워드: "${keyword}"
 
-━━━ 참고 뉴스 취재 자료 ━━━
-${newsContext || '(관련 뉴스 자료가 부족합니다. 일반적 사실을 바탕으로 작성해주세요.)'}
-━━━━━━━━━━━━━━━━━━━━━━━━
+아래는 이 키워드 관련 취재 자료입니다. 이 자료를 바탕으로 기사를 작성하세요.
+자료에 영어가 있으면 반드시 한국어로 번역하여 작성하세요.
 
-위 뉴스 자료를 종합하여 **빠르게 읽히는** 기사를 작성해주세요.
+━━━ 취재 자료 ━━━
+${newsContext || '(관련 뉴스 자료 없음. 키워드와 일반 상식을 바탕으로 작성하세요.)'}
+━━━━━━━━━━━━━━
 
-작성 포맷:
-1. 핵심 요약 3줄: "이 이슈가 뭔데?"에 대한 즉시 답변
-2. 핵심 포인트 3~5개: 불릿(•)으로 팩트 정리, 각 1~2문장
-3. 상세 배경 2~3문단: 맥락과 의미를 간결하게
-4. 전망 2~3문장: 앞으로의 전개
+위 자료를 종합하여 독자가 한눈에 상황을 파악할 수 있는 뉴스 기사를 작성하세요.
+
+⚠️ 중요:
+- 반드시 한국어로만 작성 (영어 문장 금지)
+- 취재 자료의 제목/내용을 그대로 복사하지 말 것 (재구성)
+- 도입부에서 "무슨 일인지"를 바로 설명할 것
+- 출처명(Vietnam.vn, kmjournal 등)을 본문에 넣지 말 것
 
 형식:
 TITLE: (제목)
 SUMMARY: (요약)
-TAGS: (태그1, 태그2, 태그3)
+TAGS: (태그)
 CONTENT:
-(마크다운 본문)`;
+(본문)`;
 }
 
 // ========== 기사 출력 파싱 ==========
