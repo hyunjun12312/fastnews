@@ -508,6 +508,60 @@ async function crawlSignal() {
   }
 }
 
+// ========== Signal.bz 실시간 검색어 (검색어 통합 순위 사이트) ==========
+async function crawlSignalBz() {
+  try {
+    logger.info('[크롤러] Signal.bz 실시간 검색어 크롤링 시작...');
+
+    const response = await axios.get('https://signal.bz/news', {
+      headers: {
+        ...HEADERS,
+        Referer: 'https://signal.bz/',
+      },
+      timeout: 15000,
+    });
+
+    const $ = cheerio.load(response.data);
+    const keywords = [];
+    const seen = new Set();
+
+    // Signal.bz 검색어 순위 목록 (여러 셀렉터 시도)
+    const selectors = [
+      '.rank-text',
+      '.keyword-text',
+      'a.rank-name',
+      '.list-group-item',
+      'ol li a',
+      'ul li a',
+      '.home-rank a',
+      '[class*="keyword"] a',
+      '[class*="rank"] span',
+      '[class*="trend"] a',
+    ];
+
+    for (const selector of selectors) {
+      $(selector).each((i, el) => {
+        let text = $(el).text().trim()
+          .replace(/^\d+\s*/, '')        // 앞 순위 번호 제거
+          .replace(/\s*(new|up|down|same|NEW|▲|▼|━)\s*$/i, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (text && text.length >= 2 && text.length <= 20 && !seen.has(text.toLowerCase())) {
+          seen.add(text.toLowerCase());
+          keywords.push({ keyword: text, source: 'signal', rank: i + 1 });
+        }
+      });
+      if (keywords.length >= 5) break;
+    }
+
+    logger.info(`[크롤러] Signal.bz: ${keywords.length}개 키워드 수집`);
+    return keywords;
+  } catch (error) {
+    logger.error(`[크롤러] Signal.bz 크롤링 실패: ${error.message}`);
+    return [];
+  }
+}
+
 // ========== 모든 소스 크롤링 ==========
 async function crawlAll() {
   logger.info('====== 전체 실시간 검색어 크롤링 시작 ======');
@@ -519,10 +573,11 @@ async function crawlAll() {
     crawlZum(),
     crawlNate(),
     crawlSignal(),
+    crawlSignalBz(),
   ]);
 
   const allKeywords = [];
-  const sources = ['Google Trends RSS', 'Daum 이슈', 'Naver 뉴스', 'Zum', 'Nate', 'Naver 스포츠/추가'];
+  const sources = ['Google Trends RSS', 'Daum 이슈', 'Naver 뉴스', 'Zum', 'Nate', 'Naver 스포츠/추가', 'Signal.bz'];
 
   results.forEach((result, index) => {
     if (result.status === 'fulfilled' && Array.isArray(result.value)) {
@@ -581,5 +636,6 @@ module.exports = {
   crawlZum,
   crawlNate,
   crawlSignal,
+  crawlSignalBz,
   crawlAll,
 };
