@@ -1,5 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
-
+  <url>
+    <loc>https://www.wordmoa.com/articles/%EB%B9%99%ED%8C%90-%EC%8A%B9%EB%B6%80%EC%82%AC-%ED%99%A9%EB%8C%80%ED%97%8C-2026%EB%85%84-2%EC%9B%94-15%EC%9D%BC-%ED%98%84%EC%9E%AC-%EC%A3%BC%EC%9A%94-%EC%9D%B4%EC%8A%88-%EC%B4%9D%EC%A0%95%EB%A6%AC-1771140460645.html</loc>
+    <news:news>
+      <news:publication>
+        <news:name>트렌드 뉴스</news:name>
+        <news:language>ko</news:language>
+      </news:publication>
+      <news:publication_date>2026-02-15T07:27:40.662Z</news:publication_date>
+      <news:title>빙판 승부사 황대헌, 2026년 2월 15일 현재 주요 이슈 총정리</news:title>
+      <news:keywords>빙판 승부사 황대헌</news:keywords>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://www.wordmoa.com/articles/%EB%B9%99%ED%8C%90-%EC%8A%B9%EB%B6%80%EC%82%AC-%ED%99%A9%EB%8C%80%ED%97%8C-2026%EB%85%84-2%EC%9B%94-15%EC%9D%BC-%ED%98%84%EC%9E%AC-%EC%A3%BC%EC%9A%94-%EC%9D%B4%EC%8A%88-%EC%B4%9D%EC%A0%95%EB%A6%AC-1771139890469.html</loc>
+    <news:news>
+      <news:publication>
+        <news:name>트렌드 뉴스</news:name>
+        <news:language>ko</news:language>
+      </news:publication>
+      <news:publication_date>2026-02-15T07:24:50.469Z</news:publication_date>
+      <news:title>빙판 승부사 황대헌, 2026년 2월 15일 현재 주요 이슈 총정리</news:title>
+      <news:keywords>빙판 승부사 황대헌</news:keywords>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://www.wordmoa.com/articles/%EB%B9%99%ED%8C%90-%EC%8A%B9%EB%B6%80%EC%82%AC-%ED%99%A9%EB%8C%80%ED%97%8C-2026%EB%85%84-2%EC%9B%94-15%EC%9D%BC-%EC%8B%A4%EC%8B%9C%EA%B0%84-%ED%8A%B8%EB%A0%8C%EB%93%9C-%EC%B4%9D%EC%A0%95%EB%A6%AC-1771139572833.html</loc>
+    <news:news>
+      <news:publication>
+        <news:name>트렌드 뉴스</news:name>
+        <news:language>ko</news:language>
+      </news:publication>
+      <news:publication_date>2026-02-15T07:19:32.833Z</news:publication_date>
+      <news:title>빙판 승부사 황대헌, 2026년 2월 15일 실시간 트렌드 총정리</news:title>
+      <news:keywords>빙판 승부사 황대헌</news:keywords>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://www.wordmoa.com/articles/%EB%B9%99%ED%8C%90-%EC%8A%B9%EB%B6%80%EC%82%AC-%ED%99%A9%EB%8C%80%ED%97%8C-2026%EB%85%84-2%EC%9B%94-15%EC%9D%BC-%EC%8B%A4%EC%8B%9C%EA%B0%84-%ED%8A%B8%EB%A0%8C%EB%93%9C-%EC%B4%9D%EC%A0%95%EB%A6%AC-1771138886548.html</loc>
+    <news:news>
+      <news:publication>
+        <news:name>트렌드 뉴스</news:name>
+        <news:language>ko</news:language>
+      </news:publication>
+      <news:publication_date>2026-02-15T07:08:06.548Z</news:publication_date>
+      <news:title>빙판 승부사 황대헌, 2026년 2월 15일 실시간 트렌드 총정리</news:title>
+      <news:keywords>빙판 승부사 황대헌</news:keywords>
+    </news:news>
+  </url>
 </urlset>

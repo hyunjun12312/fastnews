@@ -1,8 +1,8 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://fastnews-production.up.railway.app/sitemap.xml
-Sitemap: https://fastnews-production.up.railway.app/news-sitemap.xml
+Sitemap: https://www.wordmoa.com/sitemap.xml
+Sitemap: https://www.wordmoa.com/news-sitemap.xml
 
 User-agent: Googlebot-News
 Allow: /articles/

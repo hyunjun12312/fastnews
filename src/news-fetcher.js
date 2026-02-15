@@ -418,9 +418,19 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
     representativeImage = uniqueArticles.find(a => a.image)?.image || '';
   }
 
-  // 이미지가 없으면 다중 fallback 이미지 검색
+  // 이미지가 없으면 기사 제목 기반으로 이미지 검색 (키워드 단독 검색은 무관한 이미지가 나올 수 있으므로)
   if (!representativeImage) {
-    representativeImage = await searchImageForKeyword(keyword);
+    // 수집된 기사 제목 중 가장 긴 것을 검색 쿼리로 사용 (더 구체적인 컨텍스트)
+    const bestTitle = topArticles
+      .map(a => a.title)
+      .filter(t => t && t.length > 5)
+      .sort((a, b) => b.length - a.length)[0] || '';
+    const searchQuery = bestTitle || keyword;
+    representativeImage = await searchImageForKeyword(searchQuery);
+    // fallback 검색으로도 못 찾으면 이미지 없이 발행 (무관한 이미지보다 나음)
+    if (!representativeImage) {
+      logger.info(`[이미지] "${keyword}": 관련 이미지를 찾지 못해 이미지 없이 발행합니다`);
+    }
   }
 
   logger.info(`[뉴스] "${keyword}": 총 ${uniqueArticles.length}개 기사 수집 (본문 ${topArticles.filter(a => a.fullContent).length}개, 이미지 ${topArticles.filter(a => a.image).length}개, 대표이미지: ${representativeImage ? 'O' : 'X'})`);

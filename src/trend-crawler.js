@@ -20,6 +20,69 @@ const HEADERS = {
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
+// ========== 키워드 품질 필터 ==========
+// 실시간 검색어로 부적합한 일반적인 한국어 단어
+const KEYWORD_STOPWORDS = new Set([
+  // 일반 동사/형용사 어근 (2글자) — 뉴스 어디에나 나오는 단어
+  '지지', '반대', '충격', '투사', '어린', '확인', '공개', '발표', '논란', '화제',
+  '대응', '조사', '검토', '예상', '전망', '우려', '비판', '의혹', '진행', '예정',
+  '결정', '승인', '거부', '요구', '주장', '강조', '보도', '문제', '상황', '사건',
+  '피해', '영향', '결과', '이유', '원인', '가능', '필요', '심각', '중요', '관련',
+  '해당', '감봉', '정당', '취소', '실패', '강화', '완화', '유지', '시작', '종료',
+  '중단', '재개', '연기', '축소', '확대', '수정', '삭제', '생성', '복구', '지적',
+  '발견', '등장', '출연', '방문', '참석', '참여', '지원', '제공', '소개', '언급',
+  '우승', '패배', '승리', '도전', '경쟁', '대결', '선발', '교체', '투입', '합류',
+  // 일반 부사/관형/대명사
+  '많이', '매우', '정말', '진짜', '너무', '거의', '계속', '다시', '모두', '역시',
+  '아직', '이미', '바로', '무슨', '어떤', '이런', '그런', '무려', '겨우', '드디어',
+  // 시간 표현
+  '오늘', '내일', '어제', '올해', '지난', '다음', '이번', '최근', '현재',
+  // 뉴스 수식어/설명어
+  '무소속', '소속', '돌연', '결국', '사실', '실제', '과연', '역대', '최초', '최대',
+  '최소', '최고', '최저', '긴급', '속보', '단독', '특종', '대형', '초대형',
+  '전격', '파격', '깜짝', '초유', '이례', '잇따', '연이',
+  // 방향/위치
+  '국내', '국외', '해외', '전국', '전역', '일대', '인근', '주변',
+]);
+
+// 한국 성씨 목록 (인명 추출 정확도 향상)
+const KOREAN_FAMILY_NAMES = new Set([
+  '김', '이', '박', '최', '정', '강', '조', '윤', '장', '임',
+  '한', '오', '서', '신', '권', '황', '안', '송', '류', '전',
+  '홍', '고', '문', '양', '손', '배', '백', '허', '유', '남',
+  '심', '노', '하', '곽', '성', '차', '주', '우', '구', '민',
+  '진', '나', '변', '채', '원', '천', '방', '공', '현', '함',
+  '여', '추', '도', '소', '석', '선', '설', '마', '길', '연',
+  '탁', '표', '명', '기', '반', '피', '왕', '금', '옥', '육',
+  '인', '맹', '제', '모', '남궁', '사공', '황보', '제갈', '선우',
+]);
+
+// 키워드 품질 검증
+function isGoodKeyword(keyword) {
+  if (!keyword || keyword.length < 2) return false;
+
+  // 불용어 체크
+  if (KEYWORD_STOPWORDS.has(keyword)) return false;
+
+  const words = keyword.split(/\s+/);
+
+  // 3단어 이상 → 문장/구절 → 부적합
+  if (words.length >= 3) return false;
+
+  // 2단어: 불용어가 포함되면 부적합 ("투사 배현진", "무소속 한동훈")
+  if (words.length === 2) {
+    if (words.some(w => KEYWORD_STOPWORDS.has(w))) return false;
+  }
+
+  // 동사/형용사 어미로 끝나는 구/절 → 검색어가 아님
+  if (/(?:합니다|했다|한다|된다|있다|없다|하다|되다|않다|봤다|됐다|싶다|맞아|좋아해|싫어해|몰라|있어|없어|했어|됐어|봤어|해요|돼요|할까|는데|인데|거든|라고|다는|라는|거야|해야|네요|ㄴ다|ㄹ까)$/.test(keyword)) return false;
+
+  // 숫자만
+  if (/^\d+$/.test(keyword)) return false;
+
+  return true;
+}
+
 // ========== 헤드라인에서 핵심 키워드 추출 ==========
 // 긴 기사 제목 → 짧은 검색 키워드로 변환
 function extractKeywordsFromHeadline(headline) {
@@ -68,13 +131,15 @@ function extractKeywordsFromHeadline(headline) {
     addIfGood(part);
   }
 
-  // 4. 고유명사 패턴: 한글 2~4자 이름 (문맥에서 인명/지명 추출)
-  const namePattern = /([가-힣]{2,4})(씨|측|이|가|은|는|의|을|를|와|과|도|만|에게|에서|부터|까지)/g;
+  // 4. 인명 패턴: 한국 성씨로 시작하는 이름만 추출 (정확도 향상)
+  const namePattern = /([가-힣])([가-힣]{1,3})(씨|측|이|가|은|는|의|을|를|와|과|도|만|에게|에서|부터|까지)/g;
   let nameMatch;
   while ((nameMatch = namePattern.exec(headline)) !== null) {
-    const name = nameMatch[1];
-    if (name.length >= 2 && name.length <= 4) {
-      addIfGood(name);
+    const familyName = nameMatch[1];
+    const fullName = nameMatch[1] + nameMatch[2];
+    // 성씨 목록에 있는 경우에만 인명으로 추출
+    if (KOREAN_FAMILY_NAMES.has(familyName) && fullName.length >= 2 && fullName.length <= 4) {
+      addIfGood(fullName);
     }
   }
 
@@ -490,6 +555,11 @@ async function crawlAll() {
     if (BLACKLIST.has(cleaned)) continue;
     // 너무 짧은 (1글자)이나 너무 긴 (뉴스 전체 제목)은 제외
     if (cleaned.length > 20) continue;
+    // 키워드 품질 검증 (일반 단어, 문장 조각 제거)
+    if (!isGoodKeyword(cleaned)) {
+      logger.debug(`[품질필터] 제외: "${cleaned}"`);
+      continue;
+    }
     kw.keyword = cleaned;
     
     const normalized = cleaned.toLowerCase();
