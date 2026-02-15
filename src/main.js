@@ -35,7 +35,7 @@ function getRecentTrendKeywords() {
     const keywords = [];
     for (const r of recent) {
       const kw = r.keyword;
-      if (!seen.has(kw)) {
+      if (!seen.has(kw) && crawler.isGoodKeyword(kw)) {
         seen.add(kw);
         keywords.push(kw);
       }
@@ -86,8 +86,8 @@ async function runPipeline() {
       if (/['\"''""」]/.test(kw.keyword)) continue;
       if (/(?:까지|에서|으로|에게|부터|라는|라고|하는|되는|있는|없는)$/.test(kw.keyword)) continue;
 
-      // 최근 2시간 내에 이미 있는 키워드는 스킵 (실검은 빠르게 변하므로 짧게)
-      if (!db.isKeywordRecent(kw.keyword, 2)) {
+      // 최근 40분 내에 이미 있는 키워드는 스킵 (실검은 빠르게 변함)
+      if (!db.isKeywordRecent(kw.keyword, 40)) {
         const result = db.insertKeyword(kw.keyword, kw.source, kw.rank);
         if (result.changes > 0) {
           newKeywordsCount++;
@@ -418,6 +418,16 @@ async function start() {
     cleanExistingKeywords();
   } catch (e) {
     logger.warn(`[시작] 키워드 정제 실패: ${e.message}`);
+  }
+
+  // 1.61 키워드 테이블에서 쓰레기 키워드 삭제 (티커 정리)
+  try {
+    const kwDeleted = db.deleteGarbageKeywords(crawler.isGoodKeyword);
+    if (kwDeleted > 0) {
+      logger.info(`[시작] 키워드 테이블 쓰레기 ${kwDeleted}개 삭제`);
+    }
+  } catch (e) {
+    logger.warn(`[시작] 키워드 테이블 정리 실패: ${e.message}`);
   }
 
   // 1.65 헤드라인이 키워드로 들어간 쓰레기 기사 삭제

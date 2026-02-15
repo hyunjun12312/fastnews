@@ -152,9 +152,9 @@ function getRecentKeywords(hours = 24) {
   );
 }
 
-function isKeywordRecent(keyword, hours = 6) {
+function isKeywordRecent(keyword, minutes = 360) {
   const row = queryOne(
-    `SELECT COUNT(*) as cnt FROM keywords WHERE keyword = ? AND detected_at >= datetime('now', '-${hours} hours', 'localtime')`,
+    `SELECT COUNT(*) as cnt FROM keywords WHERE keyword = ? AND detected_at >= datetime('now', '-${minutes} minutes', 'localtime')`,
     [keyword]
   );
   return row && row.cnt > 0;
@@ -197,9 +197,9 @@ function getTodayArticleCount() {
 }
 
 function hasArticleForKeyword(keyword) {
-  // 최근 3시간 내에 같은 키워드로 기사가 있으면 중복 (시간 지나면 재생성 가능)
+  // 최근 1시간 내에 같은 키워드로 기사가 있으면 중복 (시간 지나면 재생성 가능)
   const row = queryOne(
-    `SELECT COUNT(*) as cnt FROM articles WHERE keyword = ? AND created_at >= datetime('now', '-3 hours', 'localtime')`,
+    `SELECT COUNT(*) as cnt FROM articles WHERE keyword = ? AND created_at >= datetime('now', '-1 hours', 'localtime')`,
     [keyword]
   );
   return row && row.cnt > 0;
@@ -303,6 +303,19 @@ function getArticlesWithoutImage(limit = 20) {
   return queryAll("SELECT * FROM articles WHERE (image IS NULL OR image = '') AND status = 'published' ORDER BY created_at DESC LIMIT ?", [limit]);
 }
 
+// 키워드 테이블에서 쓰레기 키워드 삭제
+function deleteGarbageKeywords(isGoodKeywordFn) {
+  const allKeywords = queryAll('SELECT id, keyword FROM keywords ORDER BY detected_at DESC LIMIT 500');
+  let deleted = 0;
+  for (const row of allKeywords) {
+    if (!isGoodKeywordFn(row.keyword)) {
+      runSql('DELETE FROM keywords WHERE id = ?', [row.id]);
+      deleted++;
+    }
+  }
+  return deleted;
+}
+
 // ========== 로그 ==========
 function logCrawl(source, keywordsFound, newKeywords) {
   return runSql('INSERT INTO crawl_logs (source, keywords_found, new_keywords) VALUES (?, ?, ?)', [source, keywordsFound, newKeywords]);
@@ -325,6 +338,6 @@ module.exports = {
   getArticleById, incrementViews, getArticleCount, getTodayArticleCount,
   hasArticleForKeyword, updateArticleImage, getArticlesWithoutImage,
   getLowQualityArticles, updateArticle, updateArticleKeyword, deleteArticle,
-  deleteArticlesWithLongKeywords, deleteArticlesWithGarbageKeywords,
+  deleteArticlesWithLongKeywords, deleteArticlesWithGarbageKeywords, deleteGarbageKeywords,
   logCrawl, getStats, saveToDisk,
 };
