@@ -6,16 +6,16 @@ require('dotenv').config();
 module.exports = {
   // AI (OpenAI / DeepSeek)
   ai: {
-    provider: process.env.AI_PROVIDER || 'deepseek',  // 'openai' 또는 'deepseek'
-    apiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY || '',
-    model: process.env.AI_MODEL || '',  // 비어있으면 provider에 따라 자동 선택
-    baseUrl: process.env.AI_BASE_URL || '',  // 비어있으면 provider에 따라 자동 선택
+    provider: (process.env.AI_PROVIDER || 'deepseek').trim(),
+    apiKey: (process.env.AI_API_KEY || process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY || '').trim(),
+    model: (process.env.AI_MODEL || '').trim(),
+    baseUrl: (process.env.AI_BASE_URL || '').trim(),
   },
 
   // 네이버 API
   naver: {
-    clientId: process.env.NAVER_CLIENT_ID || '',
-    clientSecret: process.env.NAVER_CLIENT_SECRET || '',
+    clientId: (process.env.NAVER_CLIENT_ID || '').trim(),
+    clientSecret: (process.env.NAVER_CLIENT_SECRET || '').trim(),
   },
 
   // 서버
