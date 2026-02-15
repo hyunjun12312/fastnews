@@ -27,6 +27,26 @@ if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 let articlesThisHour = 0;
 let lastHourReset = Date.now();
 
+// ========== DB에서 최근 트렌드 키워드 가져오기 ==========
+function getRecentTrendKeywords() {
+  try {
+    const recent = db.getRecentKeywords(12); // 최근 12시간
+    const seen = new Set();
+    const keywords = [];
+    for (const r of recent) {
+      const kw = r.keyword;
+      if (!seen.has(kw)) {
+        seen.add(kw);
+        keywords.push(kw);
+      }
+      if (keywords.length >= 35) break;
+    }
+    return keywords;
+  } catch (e) {
+    return [];
+  }
+}
+
 // ========== 메인 파이프라인 ==========
 async function runPipeline() {
   try {
