@@ -251,7 +251,7 @@ function cleanKeywordText(kw) {
 
 // ========== 저품질 기사 재생성 ==========
 async function regenerateLowQualityArticles() {
-  const lowQuality = db.getLowQualityArticles(10);
+  const lowQuality = db.getLowQualityArticles(50);
   if (lowQuality.length === 0) {
     logger.info('[재생성] 저품질 기사 없음');
     return;
@@ -380,6 +380,16 @@ async function start() {
     cleanExistingKeywords();
   } catch (e) {
     logger.warn(`[시작] 키워드 정제 실패: ${e.message}`);
+  }
+
+  // 1.65 헤드라인이 키워드로 들어간 쓰레기 기사 삭제
+  try {
+    const deleted = db.deleteArticlesWithLongKeywords(15);
+    if (deleted.changes > 0) {
+      logger.info(`[시작] 키워드 길이 15자 초과 기사 ${deleted.changes}개 삭제`);
+    }
+  } catch (e) {
+    logger.warn(`[시작] 쓰레기 기사 삭제 실패: ${e.message}`);
   }
 
   // 1.7 이미지 없는 기존 기사에 이미지 채우기 (백필)

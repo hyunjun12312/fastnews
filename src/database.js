@@ -213,7 +213,10 @@ function getLowQualityArticles(limit = 10) {
       OR content LIKE '%(Vietnam.vn)%'
       OR content LIKE '%(kmjournal%'
       OR content LIKE '%핵심 포인트%• **%— %• **%— %'
+      OR content LIKE '%관련 뉴스가 잇따라 보도되며 실시간 검색어에 올랐다%'
+      OR content LIKE '%으)로 전해졌다.%으)로 전해졌다.%'
       OR length(content) < 200
+      OR length(keyword) > 15
     ) ORDER BY created_at DESC LIMIT ?`,
     [limit]
   );
@@ -231,6 +234,11 @@ function updateArticle(id, { title, content, summary, image, slug }) {
   if (fields.length === 0) return { changes: 0 };
   params.push(id);
   return runSql(`UPDATE articles SET ${fields.join(', ')} WHERE id = ?`, params);
+}
+
+// 키워드가 너무 긴 기사 삭제 (헤드라인이 키워드로 들어간 쓰레기)
+function deleteArticlesWithLongKeywords(maxLen = 15) {
+  return runSql('DELETE FROM articles WHERE length(keyword) > ?', [maxLen]);
 }
 
 // 키워드 정제된 값으로 업데이트
@@ -267,6 +275,6 @@ module.exports = {
   getRecentKeywords, isKeywordRecent, insertArticle, getArticles, getArticleBySlug,
   getArticleById, incrementViews, getArticleCount, getTodayArticleCount,
   hasArticleForKeyword, updateArticleImage, getArticlesWithoutImage,
-  getLowQualityArticles, updateArticle, updateArticleKeyword,
+  getLowQualityArticles, updateArticle, updateArticleKeyword, deleteArticlesWithLongKeywords,
   logCrawl, getStats, saveToDisk,
 };

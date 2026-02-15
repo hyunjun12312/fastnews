@@ -458,6 +458,33 @@ async function enhanceArticle(aiClient, keyword, shortContent, newsContext) {
   }
 }
 
+// ========== 뉴스 기사 관련성 체크 ==========
+function isArticleRelevant(article, keyword) {
+  if (!article || !keyword) return false;
+  const kw = keyword.toLowerCase().trim();
+  const title = (article.title || '').toLowerCase();
+  const desc = (article.description || '').toLowerCase();
+  const content = (article.fullContent || '').toLowerCase();
+  
+  // 키워드가 제목/설명/본문에 포함되면 관련
+  if (title.includes(kw) || desc.includes(kw) || content.includes(kw)) return true;
+  
+  // 키워드가 2단어 이상이면 각 단어로 분리해서 체크 (2개 이상 포함시 관련)
+  const kwParts = kw.split(/\s+/).filter(p => p.length >= 2);
+  if (kwParts.length >= 2) {
+    const matchCount = kwParts.filter(part => title.includes(part) || desc.includes(part)).length;
+    if (matchCount >= Math.ceil(kwParts.length * 0.5)) return true;
+  }
+  
+  // 키워드의 한글 음절 2글자 이상이 제목에 포함되면 관련 (부분 매칭)
+  const koreanChars = kw.match(/[가-힣]{2,}/g) || [];
+  for (const chunk of koreanChars) {
+    if (chunk.length >= 2 && (title.includes(chunk) || desc.includes(chunk))) return true;
+  }
+  
+  return false;
+}
+
 // ========== 폴백: API 없이 수집 데이터로 기사 구성 ==========
 function generateFallbackArticle(keyword, newsData) {
   keyword = cleanKeyword(keyword);
@@ -469,13 +496,19 @@ function generateFallbackArticle(keyword, newsData) {
   const articles = newsData?.articles || [];
   const articlesWithContent = (newsData?.topArticlesWithContent || []).filter(a => a.fullContent && a.fullContent.length > 50);
 
+  // ===== 관련성 필터링: 키워드와 관련 있는 기사만 사용 =====
+  const relevantArticles = articles.filter(a => isArticleRelevant(a, keyword));
+  const relevantWithContent = articlesWithContent.filter(a => isArticleRelevant(a, keyword));
+  
+  logger.info(`[폴백] "${keyword}" 기사 필터: 전체 ${articles.length}개 → 관련 ${relevantArticles.length}개, 본문 ${articlesWithContent.length}개 → 관련 ${relevantWithContent.length}개`);
+
   // ===== 한국어 기사 필터링 =====
-  const koreanArticles = articles.filter(a => {
+  const koreanArticles = relevantArticles.filter(a => {
     const title = a.title || '';
     const koreanChars = (title.match(/[가-힣]/g) || []).length;
     return koreanChars > title.length * 0.15;
   });
-  const useArticles = koreanArticles.length >= 2 ? koreanArticles : articles;
+  const useArticles = koreanArticles.length >= 2 ? koreanArticles : relevantArticles;
 
   // ===== 중복 제거된 팩트 추출 =====
   const facts = [];
@@ -497,7 +530,7 @@ function generateFallbackArticle(keyword, newsData) {
 
   // ===== 본문 있는 기사에서 핵심 단락 추출 =====
   const bodyExcerpts = [];
-  for (const article of articlesWithContent) {
+  for (const article of relevantWithContent) {
     let body = cleanNewsText(article.fullContent);
     // 한국어 비율 체크
     const koreanRatio = (body.match(/[가-힣]/g) || []).length / Math.max(body.length, 1);
@@ -519,15 +552,15 @@ function generateFallbackArticle(keyword, newsData) {
   let title;
   if (facts.length > 0) {
     const bestFact = facts[0].title;
-    // 한국어 제목이 좋으면 그대로, 아니면 키워드 기반
+    // 한국어 제목이 좋으면 활용, 아니면 키워드 기반
     const isKoreanTitle = (bestFact.match(/[가-힣]/g) || []).length > bestFact.length * 0.3;
     if (isKoreanTitle && bestFact.length >= 10 && bestFact.length <= 50) {
       title = bestFact;
     } else {
-      title = `${keyword}, ${dateStr} 현재 주요 이슈 총정리`;
+      title = `'${keyword}' 실시간 검색어 급상승, 무슨 일?`;
     }
   } else {
-    title = `${keyword}, ${dateStr} 현재 주요 이슈 총정리`;
+    title = `'${keyword}' 실시간 검색어 급상승, 무슨 일?`;
   }
   if (title.length > 50) title = title.substring(0, 47) + '...';
 
@@ -539,17 +572,32 @@ function generateFallbackArticle(keyword, newsData) {
     summary = endIdx > 0 ? desc.substring(0, endIdx + 2) : desc.substring(0, 90);
   }
   if (!summary || summary.length < 20) {
-    summary = `${keyword} 관련 최신 뉴스와 핵심 내용을 종합 정리했다.`;
+    summary = `'${keyword}'이(가) 포털 실시간 검색어에 급상승하며 화제가 되고 있다.`;
   }
   // 요약에서 영어만 있는 경우 대체
   if ((summary.match(/[가-힣]/g) || []).length < 5) {
-    summary = `${keyword} 관련 최신 뉴스와 핵심 내용을 종합 정리했다.`;
+    summary = `'${keyword}'이(가) 포털 실시간 검색어에 급상승하며 화제가 되고 있다.`;
   }
 
   // ===== 본문 구성 =====
   let content = '';
 
-  // 1. 도입부
+  // 관련 데이터가 아예 없는 경우 → 깔끔한 키워드 중심 기사
+  if (facts.length === 0 && bodyExcerpts.length === 0) {
+    content += `${dateStr}, '${keyword}'이(가) 주요 포털 실시간 검색어에 오르며 네티즌들의 관심이 집중되고 있다.\n\n`;
+    content += `## 주요 내용\n\n`;
+    content += `'${keyword}'에 대한 관심이 급격히 높아지면서 관련 검색량이 폭증하고 있는 것으로 나타났다. `;
+    content += `해당 키워드는 포털 사이트 실시간 검색어 상위권에 올라 화제를 모으고 있다.\n\n`;
+    content += `현재 온라인 커뮤니티와 SNS를 중심으로 '${keyword}' 관련 게시물이 빠르게 확산되고 있으며, `;
+    content += `이에 따른 후속 보도도 잇따르고 있는 상황이다.\n\n`;
+    content += `## 배경\n\n`;
+    content += `'${keyword}'이(가) 실시간 검색어에 오른 정확한 배경에 대해서는 추가 취재가 필요한 상황이다. `;
+    content += `다만 관련 키워드의 검색량이 급증한 점으로 미루어 사회적 관심이 높은 이슈인 것으로 보인다.\n\n`;
+    content += `## 향후 전망\n\n`;
+    content += `'${keyword}' 관련 후속 보도와 추가 정보가 이어질 것으로 보인다. `;
+    content += `업계와 대중의 관심이 지속되는 만큼 향후 전개 상황이 주목된다.`;
+  } else {
+    // 1. 도입부
   if (bodyExcerpts.length > 0) {
     // 크롤링된 본문에서 도입부 구성
     const intro = bodyExcerpts[0].substring(0, 200);
@@ -622,6 +670,7 @@ function generateFallbackArticle(keyword, newsData) {
   content += `## 향후 전망\n\n`;
   content += `"${keyword}" 관련 후속 보도와 추가 정보가 이어질 것으로 보인다. `;
   content += `업계와 대중의 관심이 지속되는 만큼 향후 전개 상황이 주목된다.`;
+  } // end of else (has relevant facts)
 
   // 최종 정제
   content = content

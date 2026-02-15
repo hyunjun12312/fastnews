@@ -20,6 +20,72 @@ const HEADERS = {
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
+// ========== 헤드라인에서 핵심 키워드 추출 ==========
+// 긴 기사 제목 → 짧은 검색 키워드로 변환
+function extractKeywordsFromHeadline(headline) {
+  if (!headline || headline.length < 3) return [];
+  
+  const results = [];
+  const seen = new Set();
+  
+  const addIfGood = (text) => {
+    if (!text) return;
+    text = text.trim().replace(/[…·\-~!?.,:;'"''""「」\[\]]/g, '').trim();
+    // 공백이 2개 이상이면 문장이므로 건너뛰기 (키워드는 보통 1단어~2단어)
+    const spaceCount = (text.match(/\s/g) || []).length;
+    if (spaceCount > 1) return;
+    if (text.length >= 2 && text.length <= 8 && !seen.has(text)) {
+      seen.add(text);
+      results.push(text);
+    }
+  };
+
+  // 1. 따옴표/괄호 안 텍스트 추출: '홍대가이', "이재명"
+  const quotePatterns = [
+    /['']([^'']+)['']/g,
+    /[""]([^""]+)["\"]/g,
+    /"([^"]+)"/g,
+    /「([^」]+)」/g,
+  ];
+  for (const pattern of quotePatterns) {
+    let match;
+    while ((match = pattern.exec(headline)) !== null) {
+      addIfGood(match[1]);
+    }
+  }
+
+  // 2. 헤드라인 자체가 짧으면 그대로 사용 (≤ 8자)
+  const cleanHeadline = headline.replace(/[''"""\[\]「」]/g, '').trim();
+  if (cleanHeadline.length <= 8 && cleanHeadline.length >= 2) {
+    addIfGood(cleanHeadline);
+  }
+
+  // 3. 쉼표/구두점으로 분리 후 짧은 조각만 추출 (≤ 8자)
+  const parts = headline.split(/[,…·\-~]+/)
+    .map(p => p.trim().replace(/[''"""\[\]「」!?.]/g, '').trim())
+    .filter(p => p.length >= 2 && p.length <= 8);
+  for (const part of parts) {
+    addIfGood(part);
+  }
+
+  // 4. 고유명사 패턴: 한글 2~4자 이름 (문맥에서 인명/지명 추출)
+  const namePattern = /([가-힣]{2,4})(씨|측|이|가|은|는|의|을|를|와|과|도|만|에게|에서|부터|까지)/g;
+  let nameMatch;
+  while ((nameMatch = namePattern.exec(headline)) !== null) {
+    const name = nameMatch[1];
+    if (name.length >= 2 && name.length <= 4) {
+      addIfGood(name);
+    }
+  }
+
+  return results;
+}
+
+// 긴 키워드인지 판별 (헤드라인 수준)
+function isHeadline(text) {
+  return text.length > 12;
+}
+
 // ========== Google Trends 한국 ==========
 async function crawlGoogleTrends() {
   try {
@@ -54,7 +120,7 @@ async function crawlGoogleTrends() {
   }
 }
 
-// ========== Naver 뉴스 헤드라인 키워드 추출 ==========
+// ========== Naver 뉴스 헤드라인 → 핵심 키워드 추출 ==========
 async function crawlNaverSignal() {
   try {
     logger.info('[크롤러] Naver 뉴스 키워드 크롤링 시작...');
@@ -62,7 +128,15 @@ async function crawlNaverSignal() {
     const keywords = [];
     const seen = new Set();
 
-    // 1. 네이버 뉴스 메인 헤드라인에서 키워드 추출
+    const addKeyword = (kw, source) => {
+      const normalized = kw.toLowerCase().trim();
+      if (normalized.length >= 2 && normalized.length <= 12 && !seen.has(normalized)) {
+        seen.add(normalized);
+        keywords.push({ keyword: kw.trim(), source, rank: keywords.length + 1 });
+      }
+    };
+
+    // 1. 네이버 뉴스 메인 헤드라인에서 핵심 키워드 추출
     try {
       const response = await axios.get('https://news.naver.com/', {
         headers: { ...HEADERS, Referer: 'https://www.naver.com/' },
@@ -70,16 +144,19 @@ async function crawlNaverSignal() {
       });
       const $ = cheerio.load(response.data);
 
-      // 뉴스 헤드라인 제목에서 핵심 키워드 추출
       $('a').each((i, el) => {
         const href = $(el).attr('href') || '';
         const text = $(el).text().trim();
-        // 뉴스 기사 링크 (article URL pattern)
-        if ((href.includes('/article/') || href.includes('news.naver.com')) && text.length > 5 && text.length < 50) {
+        if ((href.includes('/article/') || href.includes('news.naver.com')) && text.length > 5 && text.length < 60) {
           const title = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
-          if (title.length > 3 && !seen.has(title)) {
-            seen.add(title);
-            keywords.push({ keyword: title, source: 'naver_news', rank: keywords.length + 1 });
+          // 짧으면 그대로, 길면 핵심 키워드 추출
+          if (title.length <= 12 && title.length >= 2) {
+            addKeyword(title, 'naver_news');
+          } else if (title.length > 12) {
+            const extracted = extractKeywordsFromHeadline(title);
+            for (const kw of extracted) {
+              addKeyword(kw, 'naver_news');
+            }
           }
         }
       });
@@ -98,11 +175,15 @@ async function crawlNaverSignal() {
       $('a').each((i, el) => {
         const href = $(el).attr('href') || '';
         const text = $(el).text().trim();
-        if ((href.includes('/article/') || href.includes('/read/')) && text.length > 5 && text.length < 50) {
+        if ((href.includes('/article/') || href.includes('/read/')) && text.length > 5 && text.length < 60) {
           const title = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
-          if (title.length > 3 && !seen.has(title)) {
-            seen.add(title);
-            keywords.push({ keyword: title, source: 'naver_entertain', rank: keywords.length + 1 });
+          if (title.length <= 12 && title.length >= 2) {
+            addKeyword(title, 'naver_entertain');
+          } else if (title.length > 12) {
+            const extracted = extractKeywordsFromHeadline(title);
+            for (const kw of extracted) {
+              addKeyword(kw, 'naver_entertain');
+            }
           }
         }
       });
@@ -247,37 +328,41 @@ async function crawlGoogleTrendsApi() {
     const keywords = [];
     const seen = new Set();
 
-    // Daum 메인 이슈/뉴스 제목에서 키워드 추출
-    $('a').each((i, el) => {
-      const href = $(el).attr('href') || '';
+    const addKeyword = (kw, source) => {
+      const normalized = kw.toLowerCase().trim();
+      if (normalized.length >= 2 && normalized.length <= 12 && !seen.has(normalized)) {
+        seen.add(normalized);
+        keywords.push({ keyword: kw.trim(), source, rank: keywords.length + 1 });
+      }
+    };
+
+    // 1순위: Daum 이슈/랭킹 영역 (짧은 검색어)
+    $('[class*="issue"] a, [class*="popular"] a, [class*="hot"] a, [class*="rank"] a').each((i, el) => {
       const text = $(el).text().trim();
-      // 뉴스/이슈 링크
-      if ((href.includes('v.daum.net') || href.includes('news.') || href.includes('/v/')) &&
-          text.length > 5 && text.length < 50) {
-        const title = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
-        if (title.length > 3 && !seen.has(title)) {
-          seen.add(title);
-          keywords.push({
-            keyword: title,
-            source: 'daum',
-            rank: keywords.length + 1,
-          });
-        }
+      if (text.length >= 2 && text.length <= 12) {
+        addKeyword(text, 'daum');
       }
     });
 
-    // 또한 Daum 이슈/랭킹 영역에서 추출
-    $('[class*="issue"] a, [class*="popular"] a, [class*="hot"] a').each((i, el) => {
-      const text = $(el).text().trim();
-      if (text.length > 3 && text.length < 40 && !seen.has(text)) {
-        seen.add(text);
-        keywords.push({
-          keyword: text,
-          source: 'daum',
-          rank: keywords.length + 1,
-        });
-      }
-    });
+    // 2순위: 뉴스 헤드라인에서 핵심 키워드 추출 (전체 제목 X)
+    if (keywords.length < 5) {
+      $('a').each((i, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+        if ((href.includes('v.daum.net') || href.includes('news.') || href.includes('/v/')) &&
+            text.length > 5 && text.length < 60) {
+          const title = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
+          if (title.length <= 12 && title.length >= 2) {
+            addKeyword(title, 'daum');
+          } else if (title.length > 12) {
+            const extracted = extractKeywordsFromHeadline(title);
+            for (const kw of extracted) {
+              addKeyword(kw, 'daum');
+            }
+          }
+        }
+      });
+    }
 
     const result = keywords.slice(0, 15);
     logger.info(`[크롤러] Daum: ${result.length}개 키워드 수집`);
@@ -296,7 +381,15 @@ async function crawlSignal() {
     const keywords = [];
     const seen = new Set();
 
-    // 1. 네이버 스포츠 뉴스 헤드라인
+    const addKeyword = (kw, source) => {
+      const normalized = kw.toLowerCase().trim();
+      if (normalized.length >= 2 && normalized.length <= 12 && !seen.has(normalized)) {
+        seen.add(normalized);
+        keywords.push({ keyword: kw.trim(), source, rank: keywords.length + 1 });
+      }
+    };
+
+    // 1. 네이버 스포츠 뉴스 헤드라인 → 핵심 키워드 추출
     try {
       const response = await axios.get('https://sports.naver.com/', {
         headers: HEADERS,
@@ -308,11 +401,15 @@ async function crawlSignal() {
         const href = $(el).attr('href') || '';
         const text = $(el).text().trim();
         if ((href.includes('/article/') || href.includes('/news/')) &&
-            text.length > 5 && text.length < 50) {
+            text.length > 5 && text.length < 60) {
           const title = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
-          if (title.length > 3 && !seen.has(title)) {
-            seen.add(title);
-            keywords.push({ keyword: title, source: 'naver_sports', rank: keywords.length + 1 });
+          if (title.length <= 12 && title.length >= 2) {
+            addKeyword(title, 'naver_sports');
+          } else if (title.length > 12) {
+            const extracted = extractKeywordsFromHeadline(title);
+            for (const kw of extracted) {
+              addKeyword(kw, 'naver_sports');
+            }
           }
         }
       });
@@ -320,7 +417,7 @@ async function crawlSignal() {
       logger.debug('[크롤러] Naver 스포츠 실패: ' + e.message);
     }
 
-    // 2. Google Trends 엔터테인먼트 카테고리
+    // 2. Google Trends 엔터테인먼트 카테고리 (이미 짧은 키워드)
     try {
       const response = await axios.get('https://trends.google.com/trending/rss?geo=KR&category=e', {
         headers: HEADERS,
@@ -329,9 +426,8 @@ async function crawlSignal() {
       const $ = cheerio.load(response.data, { xmlMode: true });
       $('item').each((i, el) => {
         const title = $(el).find('title').text().trim();
-        if (title && title.length > 1 && !seen.has(title)) {
-          seen.add(title);
-          keywords.push({ keyword: title, source: 'google_trends_ent', rank: keywords.length + 1 });
+        if (title && title.length > 1) {
+          addKeyword(title, 'google_trends_ent');
         }
       });
     } catch (e) {
@@ -393,7 +489,7 @@ async function crawlAll() {
     if (!cleaned || cleaned.length < 2) continue;
     if (BLACKLIST.has(cleaned)) continue;
     // 너무 짧은 (1글자)이나 너무 긴 (뉴스 전체 제목)은 제외
-    if (cleaned.length > 40) continue;
+    if (cleaned.length > 20) continue;
     kw.keyword = cleaned;
     
     const normalized = cleaned.toLowerCase();
