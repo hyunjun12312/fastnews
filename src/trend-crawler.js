@@ -171,7 +171,7 @@ async function crawlZum() {
 
     for (const selector of selectors) {
       $(selector).each((i, el) => {
-        const text = $(el).text().trim().replace(/^\d+\s*/, '');
+        let text = $(el).text().trim().replace(/^\d+\s*/, '').replace(/\s+\d+$/, '').trim();
         if (text && text.length > 1 && text.length < 30) {
           keywords.push({
             keyword: text,
@@ -215,7 +215,7 @@ async function crawlNate() {
 
     for (const selector of selectors) {
       $(selector).each((i, el) => {
-        const text = $(el).text().trim().replace(/^\d+\s*/, '');
+        let text = $(el).text().trim().replace(/^\d+\s*/, '').replace(/\s+\d+$/, '').trim();
         if (text && text.length > 1 && text.length < 30) {
           keywords.push({
             keyword: text,
@@ -320,7 +320,7 @@ async function crawlSignal() {
 
     for (const selector of selectors) {
       $(selector).each((i, el) => {
-        const text = $(el).text().trim().replace(/^\d+[\.\s]*/, '');
+        let text = $(el).text().trim().replace(/^\d+[\.\s]*/, '').replace(/\s+\d+$/, '').trim();
         if (text && text.length > 1 && text.length < 30) {
           keywords.push({
             keyword: text,

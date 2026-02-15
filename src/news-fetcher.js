@@ -66,12 +66,36 @@ async function fetchGoogleNews(keyword, count = 5) {
 
     $('item').each((i, el) => {
       if (i >= count) return false;
+      const rawTitle = $(el).find('title').text().trim();
+      // 제목에서 " - 출처" 분리
+      const titleParts = rawTitle.match(/^(.+?)\s*-\s*([^-]+)$/);
+      const title = titleParts ? titleParts[1].trim() : rawTitle;
+      const sourceName = titleParts ? titleParts[2].trim() : '';
+
+      // Google News RSS의 description에서 실제 기사 요약 추출
+      const rawDesc = $(el).find('description').text().trim();
+      const descHtml = cheerio.load(rawDesc);
+      // description에 <a> 태그 안에 실제 링크가 있을 수 있음
+      let actualLink = '';
+      descHtml('a').each((_, a) => {
+        const href = descHtml(a).attr('href');
+        if (href && href.startsWith('http') && !href.includes('news.google.com')) {
+          actualLink = href;
+          return false;
+        }
+      });
+      const description = descHtml.text().replace(/<[^>]*>/g, '').trim();
+
+      // Google News RSS의 link는 리다이렉트 URL
+      const googleLink = $(el).find('link').text().trim();
+
       articles.push({
-        title: $(el).find('title').text().trim(),
-        description: $(el).find('description').text().trim().replace(/<[^>]*>/g, ''),
-        link: $(el).find('link').text().trim(),
+        title,
+        description,
+        link: actualLink || googleLink,
         pubDate: $(el).find('pubDate').text().trim(),
         source: 'google_news',
+        sourceName: sourceName || 'Google News',
       });
     });
 
@@ -79,6 +103,85 @@ async function fetchGoogleNews(keyword, count = 5) {
     return articles;
   } catch (error) {
     logger.error(`[뉴스] Google 뉴스 검색 실패 [${keyword}]: ${error.message}`);
+    return [];
+  }
+}
+
+// ========== Google News 리다이렉트 URL 실제 URL 변환 ==========
+async function resolveGoogleNewsUrl(googleUrl) {
+  if (!googleUrl || !googleUrl.includes('news.google.com')) return googleUrl;
+  try {
+    const response = await axios.get(googleUrl, {
+      headers: HEADERS,
+      timeout: 10000,
+      maxRedirects: 10,
+      validateStatus: (status) => status < 400,
+    });
+    // 최종 리다이렉트된 URL 반환
+    const finalUrl = response.request?.res?.responseUrl || response.config?.url || googleUrl;
+    if (finalUrl && !finalUrl.includes('news.google.com')) {
+      return finalUrl;
+    }
+    // HTML에서 실제 URL 추출 시도
+    if (response.data) {
+      const $ = cheerio.load(response.data);
+      const metaRefresh = $('meta[http-equiv="refresh"]').attr('content') || '';
+      const urlMatch = metaRefresh.match(/url=(.+)/i);
+      if (urlMatch) return urlMatch[1].trim();
+      // data-redirect 속성 등
+      const redirectLink = $('a[data-redirect]').attr('href') || $('c-wiz a').attr('href');
+      if (redirectLink && redirectLink.startsWith('http')) return redirectLink;
+    }
+    return googleUrl;
+  } catch (error) {
+    logger.debug(`[뉴스] Google News URL 해석 실패: ${error.message}`);
+    return googleUrl;
+  }
+}
+
+// ========== 네이버 웹 검색으로 실제 뉴스 URL 확보 ==========
+async function fetchNaverSearchNews(keyword, count = 5) {
+  try {
+    // 네이버 모바일 뉴스 검색 크롤링
+    const url = `https://m.search.naver.com/search.naver?where=m_news&query=${encodeURIComponent(keyword)}&sort=1`;
+    const response = await axios.get(url, {
+      headers: {
+        ...HEADERS,
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+      },
+      timeout: 10000,
+    });
+
+    const $ = cheerio.load(response.data);
+    const articles = [];
+
+    // 뉴스 검색 결과 파싱
+    $('.news_wrap, .bx, .news_area').each((i, el) => {
+      if (i >= count) return false;
+      const titleEl = $(el).find('.news_tit, .tit, a.title_link').first();
+      const title = titleEl.text().trim();
+      const link = titleEl.attr('href') || '';
+      const desc = $(el).find('.news_dsc, .dsc_wrap, .api_txt_lines').first().text().trim();
+      const source = $(el).find('.info_group .press, .sub_txt, .info.press').first().text().trim();
+
+      if (title && link.startsWith('http')) {
+        articles.push({
+          title: title.replace(/<[^>]*>/g, ''),
+          description: desc.replace(/<[^>]*>/g, ''),
+          link,
+          pubDate: '',
+          source: 'naver_search',
+          sourceName: source || '네이버 뉴스',
+        });
+      }
+    });
+
+    if (articles.length > 0) {
+      logger.info(`[뉴스] 네이버 웹검색 "${keyword}": ${articles.length}개 기사 수집`);
+    }
+    return articles;
+  } catch (error) {
+    logger.debug(`[뉴스] 네이버 웹검색 실패 [${keyword}]: ${error.message}`);
     return [];
   }
 }
@@ -215,16 +318,21 @@ async function fetchArticleContent(url) {
 async function fetchNewsForKeyword(keyword, maxArticles = 5) {
   logger.info(`[뉴스] "${keyword}" 관련 뉴스 수집 시작...`);
 
-  // 네이버 + Google 병렬 수집
-  const [naverResults, googleResults] = await Promise.allSettled([
+  // 네이버 API + Google RSS + 네이버 웹검색 병렬 수집
+  const [naverResults, googleResults, naverSearchResults] = await Promise.allSettled([
     fetchNaverNews(keyword, maxArticles),
     fetchGoogleNews(keyword, maxArticles),
+    fetchNaverSearchNews(keyword, maxArticles),
   ]);
 
   let allArticles = [];
 
   if (naverResults.status === 'fulfilled') {
     allArticles.push(...naverResults.value);
+  }
+  // 네이버 웹검색 결과 (실제 URL이 있어서 본문 크롤링 성공률 높음)
+  if (naverSearchResults.status === 'fulfilled') {
+    allArticles.push(...naverSearchResults.value);
   }
   if (googleResults.status === 'fulfilled') {
     allArticles.push(...googleResults.value);
@@ -234,23 +342,32 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
   const uniqueArticles = [];
   const seenTitles = new Set();
   for (const article of allArticles) {
-    const normalizedTitle = article.title.replace(/\s+/g, '').toLowerCase();
-    if (!seenTitles.has(normalizedTitle)) {
+    const normalizedTitle = article.title.replace(/\s+/g, '').replace(/[^가-힣a-zA-Z0-9]/g, '').toLowerCase();
+    // 앞 15자로 유사 제목도 중복 처리
+    const shortTitle = normalizedTitle.substring(0, 15);
+    if (!seenTitles.has(normalizedTitle) && !seenTitles.has(shortTitle)) {
       seenTitles.add(normalizedTitle);
+      seenTitles.add(shortTitle);
       uniqueArticles.push(article);
+    }
+  }
+
+  // Google News 리다이렉트 URL 해석 (실제 URL이 아닌 경우만)
+  for (const article of uniqueArticles) {
+    if (article.link && article.link.includes('news.google.com')) {
+      article.link = await resolveGoogleNewsUrl(article.link);
     }
   }
 
   // 상위 기사의 본문 + 이미지 수집 (최대 5개, 병렬)
   const topArticles = uniqueArticles.slice(0, 5);
   const contentPromises = topArticles.map(async (article) => {
-    if (article.link) {
+    if (article.link && !article.link.includes('news.google.com')) {
       const result = await fetchArticleContent(article.link);
       if (typeof result === 'object') {
         article.fullContent = result.content;
         article.image = result.image || '';
       } else {
-        // 하위 호환 (문자열 반환)
         article.fullContent = result;
         article.image = '';
       }
@@ -276,6 +393,7 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
 module.exports = {
   fetchNaverNews,
   fetchGoogleNews,
+  fetchNaverSearchNews,
   fetchArticleContent,
   fetchNewsForKeyword,
 };

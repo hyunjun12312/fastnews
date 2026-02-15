@@ -54,6 +54,16 @@ function generateSlug(title) {
   return `${cleaned}-${timestamp}`;
 }
 
+// ========== 키워드 정제 ==========
+function cleanKeyword(keyword) {
+  if (!keyword) return keyword;
+  return keyword
+    .replace(/\s+\d+$/, '')     // 뒤에 붙은 숫자 제거 ("캐나다 방송 오류 9" → "캐나다 방송 오류")
+    .replace(/^\d+\s+/, '')     // 앞에 붙은 순위 숫자 제거
+    .replace(/\s+/g, ' ')       // 다중 공백 정리
+    .trim();
+}
+
 // ========== 현재 시간 포맷 ==========
 function getKoreanDateTime() {
   const now = new Date();
@@ -280,6 +290,9 @@ function postProcessContent(content) {
 
 // ========== SEO 최적화 기사 생성 (메인) ==========
 async function generateArticle(keyword, newsData) {
+  // 키워드 정제 (댓글수/순위 등 불필요 숫자 제거)
+  keyword = cleanKeyword(keyword);
+
   const aiClient = getClient();
 
   if (!aiClient) {
@@ -377,6 +390,8 @@ async function enhanceArticle(aiClient, keyword, shortContent, newsContext) {
 
 // ========== 폴백: API 없이 기사 구성 (고품질) ==========
 function generateFallbackArticle(keyword, newsData) {
+  // 키워드 정제
+  keyword = cleanKeyword(keyword);
   logger.info(`[AI] "${keyword}" 폴백 기사 생성 중...`);
 
   const now = new Date();
