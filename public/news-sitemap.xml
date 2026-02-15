@@ -8,9 +8,8 @@
         <news:name>트렌드 뉴스</news:name>
         <news:language>ko</news:language>
       </news:publication>
-      <news:publication_date>2026-02-15T07:27:40.662Z</news:publication_date>
+      <news:publication_date>2026-02-15T07:27:40+00:00</news:publication_date>
       <news:title>빙판 승부사 황대헌, 2026년 2월 15일 현재 주요 이슈 총정리</news:title>
-      <news:keywords>빙판 승부사 황대헌</news:keywords>
     </news:news>
   </url>
   <url>
@@ -20,9 +19,8 @@
         <news:name>트렌드 뉴스</news:name>
         <news:language>ko</news:language>
       </news:publication>
-      <news:publication_date>2026-02-15T07:24:50.469Z</news:publication_date>
+      <news:publication_date>2026-02-15T07:24:50+00:00</news:publication_date>
       <news:title>빙판 승부사 황대헌, 2026년 2월 15일 현재 주요 이슈 총정리</news:title>
-      <news:keywords>빙판 승부사 황대헌</news:keywords>
     </news:news>
   </url>
   <url>
@@ -32,9 +30,8 @@
         <news:name>트렌드 뉴스</news:name>
         <news:language>ko</news:language>
       </news:publication>
-      <news:publication_date>2026-02-15T07:19:32.833Z</news:publication_date>
+      <news:publication_date>2026-02-15T07:19:32+00:00</news:publication_date>
       <news:title>빙판 승부사 황대헌, 2026년 2월 15일 실시간 트렌드 총정리</news:title>
-      <news:keywords>빙판 승부사 황대헌</news:keywords>
     </news:news>
   </url>
   <url>
@@ -44,9 +41,8 @@
         <news:name>트렌드 뉴스</news:name>
         <news:language>ko</news:language>
       </news:publication>
-      <news:publication_date>2026-02-15T07:08:06.548Z</news:publication_date>
+      <news:publication_date>2026-02-15T07:08:06+00:00</news:publication_date>
       <news:title>빙판 승부사 황대헌, 2026년 2월 15일 실시간 트렌드 총정리</news:title>
-      <news:keywords>빙판 승부사 황대헌</news:keywords>
     </news:news>
   </url>
 </urlset>

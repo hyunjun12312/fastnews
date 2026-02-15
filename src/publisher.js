@@ -820,7 +820,11 @@ function generateNewsSitemap(articles, baseUrl = '') {
     return (Date.now() - d.getTime()) < 48 * 3600000; // 48시간 이내
   });
 
-  const urls = recentArticles.map(a => `
+  const urls = recentArticles.map(a => {
+    const pubDate = new Date(a.published_at || a.created_at || Date.now());
+    // Google News는 W3C Datetime (밀리초 없이) 권장
+    const isoDate = pubDate.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+    return `
   <url>
     <loc>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</loc>
     <news:news>
@@ -828,11 +832,11 @@ function generateNewsSitemap(articles, baseUrl = '') {
         <news:name>${escapeHtml(config.site.title)}</news:name>
         <news:language>ko</news:language>
       </news:publication>
-      <news:publication_date>${new Date(a.published_at || a.created_at || Date.now()).toISOString()}</news:publication_date>
+      <news:publication_date>${isoDate}</news:publication_date>
       <news:title>${escapeHtml(a.title)}</news:title>
-      <news:keywords>${escapeHtml(a.keyword || '')}</news:keywords>
     </news:news>
-  </url>`).join('');
+  </url>`;
+  }).join('');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"

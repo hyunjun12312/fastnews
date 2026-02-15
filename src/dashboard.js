@@ -20,6 +20,14 @@ const io = new Server(server);
 
 app.use(express.json());
 
+// XML 파일 Content-Type 명시 (검색엔진 호환성)
+app.use((req, res, next) => {
+  if (req.path.endsWith('.xml')) {
+    res.type('application/xml; charset=utf-8');
+  }
+  next();
+});
+
 // Railway Volume 지원: DATA_DIR이 설정되면 해당 경로를 우선 서빙
 const DATA_DIR = process.env.DATA_DIR || '';
 if (DATA_DIR) {
