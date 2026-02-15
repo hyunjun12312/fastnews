@@ -1,0 +1,25 @@
+{
+  "name": "korean-trend-autopublisher",
+  "version": "1.0.0",
+  "description": "한국 실시간 검색어 자동 감지 + AI 기사 생성 + 자동 퍼블리싱 시스템",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "dashboard": "node src/dashboard.js",
+    "dev": "node src/main.js --dev",
+    "test": "node src/test.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "express": "^4.18.0",
+    "openai": "^4.20.0",
+    "node-cron": "^3.0.3",
+    "sql.js": "^1.10.0",
+    "rss-parser": "^3.13.0",
+    "marked": "^11.0.0",
+    "dotenv": "^16.3.0",
+    "winston": "^3.11.0",
+    "socket.io": "^4.7.0"
+  }
+}
