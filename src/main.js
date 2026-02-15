@@ -56,6 +56,10 @@ async function runPipeline() {
     // DB에 키워드 저장 (새로운 것만)
     let newKeywordsCount = 0;
     for (const kw of keywords) {
+      // 키워드 한번 더 정제
+      kw.keyword = cleanKeywordText(kw.keyword);
+      if (!kw.keyword || kw.keyword.length < 2) continue;
+
       // 최근 6시간 내에 이미 있는 키워드는 스킵
       if (!db.isKeywordRecent(kw.keyword, 6)) {
         const result = db.insertKeyword(kw.keyword, kw.source, kw.rank);
@@ -236,6 +240,109 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// 키워드 정제 함수
+function cleanKeywordText(kw) {
+  return kw.trim()
+    .replace(/\s+\d+$/, '')       // 끝에 " 숫자" 제거
+    .replace(/^\d+\s+/, '')       // 앞에 "숫자 " 제거
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// ========== 저품질 기사 재생성 ==========
+async function regenerateLowQualityArticles() {
+  const lowQuality = db.getLowQualityArticles(10);
+  if (lowQuality.length === 0) {
+    logger.info('[재생성] 저품질 기사 없음');
+    return;
+  }
+
+  logger.info(`[재생성] 저품질 기사 ${lowQuality.length}개 발견, 재생성 시작...`);
+  dashboard.emitEvent('log', `🔄 저품질 기사 ${lowQuality.length}개 재생성 중...`);
+
+  let regenerated = 0;
+  for (const article of lowQuality) {
+    try {
+      // 키워드 정제
+      const cleanedKeyword = cleanKeywordText(article.keyword);
+      if (cleanedKeyword !== article.keyword) {
+        db.updateArticleKeyword(article.id, cleanedKeyword);
+        logger.info(`[재생성] 키워드 정제: "${article.keyword}" → "${cleanedKeyword}"`);
+      }
+
+      // 뉴스 재수집
+      logger.info(`[재생성] "${cleanedKeyword}" 뉴스 재수집...`);
+      const newsData = await newsFetcher.fetchNewsForKeyword(cleanedKeyword);
+
+      // AI 기사 재생성
+      logger.info(`[재생성] "${cleanedKeyword}" 기사 재생성...`);
+      const newArticle = await articleGenerator.generateArticle(cleanedKeyword, newsData);
+
+      if (!newArticle) {
+        logger.warn(`[재생성] "${cleanedKeyword}" 재생성 실패`);
+        continue;
+      }
+
+      // DB 업데이트
+      db.updateArticle(article.id, {
+        title: newArticle.title,
+        content: newArticle.content,
+        summary: newArticle.summary,
+        image: newArticle.image || article.image || '',
+        slug: newArticle.slug,
+      });
+
+      // 키워드도 정제된 것으로 업데이트
+      if (cleanedKeyword !== article.keyword) {
+        db.updateArticleKeyword(article.id, cleanedKeyword);
+      }
+
+      // HTML 파일 재생성
+      const updatedArticle = db.getArticleById(article.id);
+      publisher.publishArticle(updatedArticle, []);
+
+      regenerated++;
+      logger.info(`✅ [재생성] "${cleanedKeyword}" → "${newArticle.title}" 재생성 완료!`);
+      dashboard.emitEvent('log', `🔄 "${newArticle.title}" 재생성 완료!`);
+
+      await sleep(3000); // API 간격
+    } catch (err) {
+      logger.error(`[재생성] "${article.keyword}" 실패: ${err.message}`);
+    }
+  }
+
+  if (regenerated > 0) {
+    // 인덱스 페이지 갱신
+    const publishedArticles = db.getArticles({ status: 'published', limit: 50 });
+    publisher.updateIndex(publishedArticles, []);
+    logger.info(`[재생성] ${regenerated}/${lowQuality.length}개 기사 재생성 완료`);
+    dashboard.emitEvent('log', `🔄 ${regenerated}개 기사 재생성 완료`);
+  }
+}
+
+// ========== 기존 기사 키워드 정제 ==========
+function cleanExistingKeywords() {
+  const articles = db.getArticles({ status: 'published', limit: 200 });
+  let cleaned = 0;
+  for (const article of articles) {
+    const original = article.keyword;
+    const clean = cleanKeywordText(original);
+    if (clean !== original && clean.length > 1) {
+      db.updateArticleKeyword(article.id, clean);
+      // 제목에도 숫자가 포함되어 있으면 정제
+      if (article.title.includes(original) && original !== clean) {
+        const newTitle = article.title.replace(original, clean);
+        db.updateArticle(article.id, { title: newTitle });
+      }
+      cleaned++;
+      logger.info(`[키워드 정제] "${original}" → "${clean}"`);
+    }
+  }
+  if (cleaned > 0) {
+    logger.info(`[키워드 정제] ${cleaned}개 기사 키워드 정제 완료`);
+  }
+}
+
 // ========== 시스템 시작 ==========
 async function start() {
   console.log(`
@@ -268,11 +375,25 @@ async function start() {
     logger.warn(`[시작] 기본 인덱스 생성 실패: ${e.message}`);
   }
 
-  // 1.6 이미지 없는 기존 기사에 이미지 채우기 (백필)
+  // 1.6 기존 키워드 숫자 정제
+  try {
+    cleanExistingKeywords();
+  } catch (e) {
+    logger.warn(`[시작] 키워드 정제 실패: ${e.message}`);
+  }
+
+  // 1.7 이미지 없는 기존 기사에 이미지 채우기 (백필)
   try {
     await backfillArticleImages();
   } catch (e) {
     logger.warn(`[시작] 이미지 백필 실패: ${e.message}`);
+  }
+
+  // 1.8 저품질 기사 재생성
+  try {
+    await regenerateLowQualityArticles();
+  } catch (e) {
+    logger.warn(`[시작] 저품질 기사 재생성 실패: ${e.message}`);
   }
 
   // 2. 최초 실행
