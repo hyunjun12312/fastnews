@@ -75,9 +75,10 @@ async function runPipeline() {
       logger.info('[STEP 1] 새로운 키워드가 없습니다. 파이프라인 종료.');
       dashboard.emitEvent('log', 'ℹ️ 새 키워드 없음, 대기 중...');
       
-      // 인덱스 페이지는 항상 갱신
+      // 인덱스 페이지는 항상 갱신 (트렌드 키워드 포함)
       const publishedArticles = db.getArticles({ status: 'published', limit: 50 });
-      publisher.updateIndex(publishedArticles);
+      const trendKeywords = keywords.map(k => k.keyword);
+      publisher.updateIndex(publishedArticles, trendKeywords);
       
       dashboard.emitEvent('stats', db.getStats());
       return;
@@ -144,7 +145,8 @@ async function runPipeline() {
 
         if (status === 'published') {
           const savedArticle = db.getArticleById(result.lastInsertRowid);
-          publisher.publishArticle(savedArticle);
+          const trendKws = keywords.map(k => k.keyword);
+          publisher.publishArticle(savedArticle, trendKws);
 
           dashboard.emitEvent('newArticle', {
             id: result.lastInsertRowid,
@@ -173,7 +175,8 @@ async function runPipeline() {
     // ===== STEP 6: 인덱스 페이지 갱신 =====
     logger.info('[STEP 6] 인덱스 페이지 갱신...');
     const publishedArticles = db.getArticles({ status: 'published', limit: 50 });
-    publisher.updateIndex(publishedArticles);
+    const allTrendKeywords = keywords.map(k => k.keyword);
+    publisher.updateIndex(publishedArticles, allTrendKeywords);
 
     // 통계 갱신
     dashboard.emitEvent('stats', db.getStats());

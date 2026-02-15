@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://yourdomain.com/sitemap.xml
+Sitemap: https://yourdomain.com/news-sitemap.xml
+
+User-agent: Googlebot-News
+Allow: /articles/
