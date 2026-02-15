@@ -205,11 +205,14 @@ function hasArticleForKeyword(keyword) {
 function getLowQualityArticles(limit = 10) {
   return queryAll(
     `SELECT * FROM articles WHERE status = 'published' AND (
-      title LIKE '%현재 주요 이슈 총정리%'
-      OR summary LIKE '%종합 분석했습니다%'
-      OR summary LIKE '%종합 분석했습니다%'
-      OR title LIKE '%총정리'
+      title LIKE '%주요 쟁점과 핵심 내용 정리%'
+      OR title LIKE '%현재 주요 이슈 총정리%'
+      OR title LIKE '%실시간 트렌드 총정리%'
+      OR title LIKE '%실시간 검색어 등극%'
       OR content LIKE '%주요 보도 내용 종합%'
+      OR content LIKE '%(Vietnam.vn)%'
+      OR content LIKE '%(kmjournal%'
+      OR content LIKE '%핵심 포인트%• **%— %• **%— %'
       OR length(content) < 200
     ) ORDER BY created_at DESC LIMIT ?`,
     [limit]
