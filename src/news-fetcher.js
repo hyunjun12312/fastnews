@@ -410,13 +410,8 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
   });
   await Promise.allSettled(contentPromises);
 
-  // 대표 이미지: 가장 먼저 이미지가 있는 기사에서 추출 (뉴스 기사 og:image만 사용)
-  let representativeImage = topArticles.find(a => a.image)?.image || '';
-
-  // Google News RSS에서 가져온 이미지도 체크
-  if (!representativeImage) {
-    representativeImage = uniqueArticles.find(a => a.image)?.image || '';
-  }
+  // 대표 이미지 선택: 키워드와 가장 관련 있는 이미지를 우선 선택
+  let representativeImage = selectBestImage(topArticles, uniqueArticles, keyword);
 
   // 뉴스 기사에서 이미지를 못 찾으면 이미지 검색으로 폴백
   if (!representativeImage) {
@@ -437,6 +432,56 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
     totalCount: uniqueArticles.length,
     representativeImage,
   };
+}
+
+// ========== 대표 이미지 선정 (키워드 관련성 기반) ==========
+function selectBestImage(topArticles, allArticles, keyword) {
+  // 이미지가 있는 기사들 수집
+  const articlesWithImage = topArticles.filter(a => a.image);
+  if (articlesWithImage.length === 0) {
+    // topArticles에 이미지 없으면 allArticles에서 찾기
+    return allArticles.find(a => a.image)?.image || '';
+  }
+
+  // 이미지가 1개뿐이면 그대로 사용
+  if (articlesWithImage.length === 1) {
+    return articlesWithImage[0].image;
+  }
+
+  const kwWords = keyword.split(/\s+/).filter(w => w.length >= 2);
+  
+  // 각 이미지에 점수 매기기
+  const scored = articlesWithImage.map(article => {
+    let score = 0;
+    const title = (article.title || '').toLowerCase();
+    const imgUrl = (article.image || '').toLowerCase();
+
+    // 1. 기사 제목에 키워드 단어가 많이 포함될수록 높은 점수
+    for (const w of kwWords) {
+      if (title.includes(w.toLowerCase())) score += 3;
+    }
+
+    // 2. 이미지 URL에 키워드 관련 단어가 포함되면 가산점
+    for (const w of kwWords) {
+      if (imgUrl.includes(encodeURIComponent(w)) || imgUrl.includes(w.toLowerCase())) score += 2;
+    }
+
+    // 3. 네이버 뉴스 이미지는 일반적으로 품질 좋음
+    if (article.image.includes('imgnews.pstatic.net')) score += 1;
+
+    // 4. 기사 제목이 키워드로 시작하면 가산점 (가장 직접적)
+    if (title.startsWith(keyword.toLowerCase()) || title.startsWith(kwWords[0]?.toLowerCase())) score += 2;
+
+    return { image: article.image, score, title: article.title };
+  });
+
+  // 점수 높은 순으로 정렬
+  scored.sort((a, b) => b.score - a.score);
+
+  logger.debug(`[이미지] 대표 이미지 선정 - 키워드: "${keyword}"`);
+  scored.forEach(s => logger.debug(`  점수 ${s.score}: ${s.title?.substring(0, 40)}...`));
+
+  return scored[0].image;
 }
 
 // ========== 이미지 검색 (다중 소스 fallback) ==========
