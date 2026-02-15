@@ -368,7 +368,16 @@ async function crawlAll() {
   // 중복 제거 (키워드 기준)
   const uniqueMap = new Map();
   for (const kw of allKeywords) {
-    const normalized = kw.keyword.trim().toLowerCase();
+    // 키워드 정제: 앞뒤 공백, 뒤에 붙은 불필요한 숫자 제거 (댓글수/순위 등)
+    let cleaned = kw.keyword.trim()
+      .replace(/\s+\d+$/, '')     // 끝에 " 숫자" 제거 (예: "캐나다 방송 오류 9")
+      .replace(/\s+/g, ' ')       // 다중 공백 → 단일 공백
+      .trim();
+    
+    if (!cleaned || cleaned.length < 2) continue;
+    kw.keyword = cleaned;
+    
+    const normalized = cleaned.toLowerCase();
     if (!uniqueMap.has(normalized)) {
       uniqueMap.set(normalized, kw);
     }
