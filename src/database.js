@@ -272,9 +272,17 @@ function deleteArticlesWithGarbageKeywords() {
   const result2 = runSql("DELETE FROM articles WHERE keyword GLOB '[0-9]*' AND keyword NOT GLOB '*[^0-9]*'");
   // 조사로 끝나는 키워드 삭제 (까지, 에서, 으로 등)
   const result3 = runSql("DELETE FROM articles WHERE keyword LIKE '%까지' OR keyword LIKE '%에서' OR keyword LIKE '%으로'");
-  // 따옴표가 포함된 키워드 삭제
-  const result4 = runSql("DELETE FROM articles WHERE keyword LIKE '%''%'");
-  return { changes: (result1?.changes || 0) + (result2?.changes || 0) + (result3?.changes || 0) + (result4?.changes || 0) };
+  // 따옴표가 포함된 키워드 삭제 (싱글 + 더블)
+  const result4 = runSql("DELETE FROM articles WHERE keyword LIKE '%''%' OR keyword LIKE '%\"%'");
+  // 쓰레기 키워드 부분 매칭 (따옴표 등 붙어있어도 삭제)
+  const result5 = runSql(`DELETE FROM articles WHERE 
+    keyword LIKE '%오빠%' OR keyword LIKE '%자기야%' OR keyword LIKE '%주인공%' 
+    OR keyword LIKE '%조상님%' OR keyword LIKE '%생활양식%' OR keyword LIKE '%제사상%'
+    OR keyword LIKE '%뛰노%' OR keyword LIKE '%이어트%' OR keyword LIKE '%코르티스%'
+    OR keyword LIKE '%금하지%' OR keyword LIKE '%파산까지%' OR keyword LIKE '%많이 좋아해%'
+    OR keyword LIKE '%투사 배현진%' OR keyword LIKE '%설 연휴 맞아%'
+  `);
+  return { changes: (result1?.changes || 0) + (result2?.changes || 0) + (result3?.changes || 0) + (result4?.changes || 0) + (result5?.changes || 0) };
 }
 
 // 키워드 정제된 값으로 업데이트

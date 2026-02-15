@@ -447,12 +447,16 @@ async function start() {
     logger.warn(`[시작] 이미지 백필 실패: ${e.message}`);
   }
 
-  // 1.8 저품질 기사 재생성
-  try {
-    await regenerateLowQualityArticles();
-  } catch (e) {
-    logger.warn(`[시작] 저품질 기사 재생성 실패: ${e.message}`);
-  }
+  // 1.8 저품질 기사 재생성 (시작 시에는 건너뛰고 30분 후 비동기 실행)
+  // → 시작 시 재생성하면 cron이 10분+ 블로킹됨
+  setTimeout(async () => {
+    try {
+      await regenerateLowQualityArticles();
+    } catch (e) {
+      logger.warn(`[지연 재생성] 저품질 기사 재생성 실패: ${e.message}`);
+    }
+  }, 30 * 60 * 1000); // 30분 후 실행
+  logger.info('[시작] 저품질 기사 재생성은 30분 후 실행 예정');
 
   // 2. 최초 실행
   logger.info('🏁 최초 파이프라인 실행...');

@@ -3,6 +3,17 @@
         xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
 
   <url>
+    <loc>https://www.wordmoa.com/articles/%EC%96%B8%EB%8D%94%EC%BB%A4%EB%B2%84-%EB%AF%B8%EC%93%B0%ED%99%8D-%EB%B0%95%EC%8B%A0%ED%98%9C-%EB%B9%84%EC%9E%90%EA%B8%88-%EC%9E%A5%EB%B6%80-%EC%B0%BE%EC%95%98%EB%8B%A4%ED%95%98%EC%9C%A4%EA%B2%BD%EC%97%90-%EA%B3%B5%EC%A1%B0-%EC%A0%9C%EC%95%88-1771147446232.html</loc>
+    <news:news>
+      <news:publication>
+        <news:name>트렌드 뉴스</news:name>
+        <news:language>ko</news:language>
+      </news:publication>
+      <news:publication_date>2026-02-15T09:24:06+00:00</news:publication_date>
+      <news:title>&#039;언더커버 미쓰홍&#039; 박신혜, 비자금 장부 찾았다…하윤경에 공조 제안</news:title>
+    </news:news>
+  </url>
+  <url>
     <loc>https://www.wordmoa.com/articles/%EC%82%AC%EC%A7%81%EC%84%9C-%EB%82%B4%EC%9E%90-%EC%B6%A9%EC%A3%BC%EB%A7%A8-%EC%95%94%EC%A0%81-%EC%A1%B4%EC%9E%AC%EC%B6%A9%EC%A3%BC%EC%8B%9C-%EC%9C%A0%ED%8A%9C%EB%B8%8C-%ED%9B%84%ED%8F%AD%ED%92%8D-1771146912412.html</loc>
     <news:news>
       <news:publication>
