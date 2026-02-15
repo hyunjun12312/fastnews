@@ -144,9 +144,15 @@ async function fetchArticleContent(url) {
       .replace(/\n\s*\n/g, '\n\n')
       .trim();
 
-    // 최대 3000자로 제한
-    if (content.length > 3000) {
-      content = content.substring(0, 3000) + '...';
+    // 최대 5000자로 제한 (AI에게 더 풍부한 컨텍스트 제공)
+    if (content.length > 5000) {
+      // 마지막 완전한 문장까지만 자르기
+      let truncated = content.substring(0, 5000);
+      const lastPeriod = truncated.lastIndexOf('다.');
+      if (lastPeriod > 3000) {
+        truncated = truncated.substring(0, lastPeriod + 2);
+      }
+      content = truncated;
     }
 
     return content;
@@ -186,13 +192,15 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
     }
   }
 
-  // 상위 기사의 본문 가져오기 (최대 3개)
-  const topArticles = uniqueArticles.slice(0, 3);
-  for (const article of topArticles) {
+  // 상위 기사의 본문 가져오기 (최대 5개로 확대 - 기사 품질 향상)
+  const topArticles = uniqueArticles.slice(0, 5);
+  const contentPromises = topArticles.map(async (article) => {
     if (article.link) {
       article.fullContent = await fetchArticleContent(article.link);
     }
-  }
+    return article;
+  });
+  await Promise.allSettled(contentPromises);
 
   logger.info(`[뉴스] "${keyword}": 총 ${uniqueArticles.length}개 기사 수집 (본문 ${topArticles.filter(a => a.fullContent).length}개)`);
 
