@@ -418,9 +418,14 @@ async function fetchNewsForKeyword(keyword, maxArticles = 5) {
     representativeImage = uniqueArticles.find(a => a.image)?.image || '';
   }
 
-  // 이미지가 없으면 이미지 없이 발행 (Bing/Google 검색은 무관한 이미지를 가져오므로 사용하지 않음)
+  // 뉴스 기사에서 이미지를 못 찾으면 이미지 검색으로 폴백
   if (!representativeImage) {
-    logger.info(`[이미지] "${keyword}": 뉴스 기사에서 이미지를 찾지 못해 이미지 없이 발행합니다`);
+    logger.info(`[이미지] "${keyword}": 뉴스 기사에서 이미지 못 찾음 → 이미지 검색 시도`);
+    try {
+      representativeImage = await searchImageForKeyword(keyword);
+    } catch (e) {
+      logger.debug(`[이미지] "${keyword}": 이미지 검색 실패: ${e.message}`);
+    }
   }
 
   logger.info(`[뉴스] "${keyword}": 총 ${uniqueArticles.length}개 기사 수집 (본문 ${topArticles.filter(a => a.fullContent).length}개, 이미지 ${topArticles.filter(a => a.image).length}개, 대표이미지: ${representativeImage ? 'O' : 'X'})`);

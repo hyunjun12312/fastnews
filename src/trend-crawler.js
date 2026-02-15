@@ -34,8 +34,8 @@ const KEYWORD_STOPWORDS = new Set([
   '해당', '감봉', '정당', '취소', '실패', '강화', '완화', '유지', '시작', '종료',
   '중단', '재개', '연기', '축소', '확대', '수정', '삭제', '생성', '복구', '지적',
   '발견', '등장', '출연', '방문', '참석', '참여', '지원', '제공', '소개', '언급',
-  '우승', '패배', '승리', '도전', '경쟁', '대결', '선발', '교체', '투입', '합류',
-  '투기', '발생', '해결', '처리', '추진', '변경', '이동', '설치', '운영', '폐쇄',
+  '우승', '패배', '승리', '도전', '경쟁', '대결', '선발', '교체', '투입', '합류', '응원',
+  '투기', '발생', '해결', '처리', '추진', '변경', '이동', '설치', '운영', '폐쇄', '부상',
   '출발', '도착', '통과', '중지', '개방', '차단', '허용', '금지', '위반', '적발',
   // 일반 명사 (국가/도시/정치)
   '미국', '중국', '일본', '한국', '북한', '러시아', '유럽', '영국', '독일', '프랑스',
@@ -74,7 +74,7 @@ const KEYWORD_STOPWORDS = new Set([
   // 일반적 합성어 (검색어가 될 수 없는 것들)
   '개인비서', '자료정리', '구조분석', '이어트', '코르티스',
   // 너무 일반적인 단어 (단독 검색어 부적합)
-  '나라', '이웃', '오빠', '언니', '동생', '형', '공항', '변호사', '의사', '교수',
+  '나라', '이웃', '오빠', '언니', '동생', '형', '공항', '변호사', '의사', '교수', '판사',
   '자기야', '주인공', '조상님', '충남도', '경기도', '전남도', '전북도', '경남도', '경북도',
   '생활양식', '제사상', '그들', '여야', '뛰노', '이틀', '사흘', '며칠',
   '금하지', '파산까지', '충주시', '전국', '세계', '역사', '미래',
@@ -110,6 +110,9 @@ function isGoodKeyword(keyword) {
 
   // 2글자: 한글1자+조사/어미 (하는, 되는, 같은, 있는, 오른, 나선 등)
   if (keyword.length === 2 && /^[\uac00-\ud7a3][는을를이가의에서로와과도만은른선]$/.test(keyword)) return false;
+
+  // X글자 이상 키워드가 는/은/이/가 등 단일 조사로 끝남 (이한영은, 서울시는 등)
+  if (/[\uac00-\ud7a3]{2,}[은는이가을를]$/.test(keyword) && keyword.length >= 3) return false;
 
   // 3~5글자 조사/어미로 끝남
   if (/(?:에서|으로|에게|부터|까지|처럼|만큼|대로|같이|밖에|마저|조차|도록|면서|지만|더니|려고|라서|니까|므로|거나)$/.test(keyword) && keyword.length <= 5) return false;
@@ -438,23 +441,36 @@ async function crawlSignalBz() {
 }
 
 function extractSignalKeywords(keywords, seen, rawKeyword, rank) {
-  const text = rawKeyword.trim();
+  // 물음표, 느낌표 등 문장부호 제거
+  const text = rawKeyword.trim().replace(/[?？!！~…]+$/g, '').trim();
   // 쉼표로 분리된 복합 키워드 → 각각 처리
   const parts = text.split(/[,，]/).map(p => p.trim()).filter(p => p.length >= 2);
   
   for (const part of parts) {
-    const words = part.split(/\s+/);
+    // 조사/어미 제거: "이한영은" → "이한영", "빌런?" → "빌런"
+    const cleaned = cleanTrailingParticles(part);
+    if (!cleaned || cleaned.length < 2) continue;
+
+    const words = cleaned.split(/\s+/);
     // 2단어 이하면 그대로
     if (words.length <= 2) {
-      addSignalKeyword(keywords, seen, part, rank);
+      addSignalKeyword(keywords, seen, cleaned, rank);
     } else {
-      // 3단어 이상이면 첫 1~2단어 추출
-      addSignalKeyword(keywords, seen, words[0], rank);
-      if (words.length >= 2) {
-        addSignalKeyword(keywords, seen, words.slice(0, 2).join(' '), rank);
-      }
+      // 3단어 이상이면 첫 1~2단어 추출 (조사 제거 후)
+      const w0 = cleanTrailingParticles(words[0]);
+      if (w0 && w0.length >= 2) addSignalKeyword(keywords, seen, w0, rank);
+      const w01 = cleanTrailingParticles(words.slice(0, 2).join(' '));
+      if (w01 && w01.length >= 2) addSignalKeyword(keywords, seen, w01, rank);
     }
   }
+}
+
+// Signal.bz 문장형 키워드에서 끝의 조사/어미 제거
+function cleanTrailingParticles(text) {
+  return text
+    .replace(/[?？!！~…\.]+$/g, '')  // 문장부호 제거
+    .replace(/(?:은|는|이|가|을|를|의|에|로|와|과|도|만|서|에서|으로|까지|부터|에게|이다|이라|하는|되는|라고|라는)$/g, '')  // 끝 조사 제거
+    .trim();
 }
 
 function addSignalKeyword(keywords, seen, text, rank) {
