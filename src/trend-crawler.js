@@ -310,6 +310,58 @@ async function crawlNate() {
   }
 }
 
+// ========== 네이버 실시간 인기 검색어 (Naver Mobile) ==========
+async function crawlNaverMobile() {
+  try {
+    logger.info('[크롤러] 네이버 모바일 인기검색어 크롤링 시작...');
+    const keywords = [];
+
+    // 네이버 모바일 메인 페이지에서 인기 검색어 추출
+    const urls = [
+      'https://m.search.naver.com/search.naver?query=%EC%8B%A4%EC%8B%9C%EA%B0%84+%EA%B2%80%EC%83%89%EC%96%B4',
+      'https://datalab.naver.com/keyword/realtimeList.naver?age=0',
+    ];
+
+    for (const url of urls) {
+      try {
+        const res = await axios.get(url, {
+          headers: { ...HEADERS, 'Accept': 'text/html' },
+          timeout: 8000,
+        });
+        const $ = cheerio.load(res.data);
+
+        // 다양한 셀렉터로 키워드 추출 시도
+        const selectors = [
+          '.keyword_rank .item_title', '.lst_relate .tit', '.keyword_item .txt',
+          '.rank_area .keyword', '.list_trend_keyword .keyword',
+          '.realtime_kwd_lst li a', '.kwd_lst li a',
+          'a.keyword', '.keyword_box a', '.trend_item',
+        ];
+        
+        for (const sel of selectors) {
+          $(sel).each((i, el) => {
+            const text = $(el).text().trim().replace(/^\d+\s*/, '');
+            if (text && text.length >= 2 && text.length <= 20) {
+              keywords.push({ keyword: text, source: 'naver', rank: i + 1 });
+            }
+          });
+          if (keywords.length >= 5) break;
+        }
+
+        if (keywords.length >= 5) break;
+      } catch (e) {
+        logger.debug(`[크롤러] 네이버 URL 실패: ${e.message}`);
+      }
+    }
+
+    logger.info(`[크롤러] 네이버 모바일: ${keywords.length}개 키워드 수집`);
+    return keywords;
+  } catch (error) {
+    logger.error(`[크롤러] 네이버 모바일 크롤링 실패: ${error.message}`);
+    return [];
+  }
+}
+
 // ========== Signal.bz 실시간 검색어 통합 ==========
 async function crawlSignalBz() {
   try {
@@ -318,37 +370,62 @@ async function crawlSignalBz() {
     const keywords = [];
     const seen = new Set();
 
-    // Signal.bz API에서 실시간 검색어 직접 수집
-    const response = await axios.get('https://test-api.signal.bz/news/realtime', {
-      headers: { ...HEADERS, Referer: 'https://signal.bz/' },
-      timeout: 15000,
-    });
+    // 방법 1: Signal.bz API
+    try {
+      const response = await axios.get('https://test-api.signal.bz/news/realtime', {
+        headers: { ...HEADERS, Referer: 'https://signal.bz/' },
+        timeout: 8000,
+      });
 
-    const data = response.data;
-    if (data && data.top10 && Array.isArray(data.top10)) {
-      for (const item of data.top10) {
-        if (!item.keyword) continue;
+      const data = response.data;
+      if (data && data.top10 && Array.isArray(data.top10)) {
+        for (const item of data.top10) {
+          if (!item.keyword) continue;
+          extractSignalKeywords(keywords, seen, item.keyword, item.rank);
+        }
+      }
+    } catch (apiErr) {
+      logger.debug(`[크롤러] Signal.bz API 실패: ${apiErr.message}`);
+    }
 
-        // Signal.bz는 긴 문장형 키워드를 반환하므로 핵심 키워드를 추출
-        const rawKeyword = item.keyword.trim();
+    // 방법 2: Signal.bz 웹페이지 크롤링 (API 실패 시 fallback)
+    if (keywords.length === 0) {
+      try {
+        const webRes = await axios.get('https://signal.bz/', {
+          headers: HEADERS,
+          timeout: 10000,
+        });
+        const $ = cheerio.load(webRes.data);
 
-        // 1) 쉼표로 분리된 복합 키워드 → 각각 처리
-        const parts = rawKeyword.split(/[,，]/).map(p => p.trim()).filter(p => p.length >= 2);
+        // 실시간 검색어 리스트에서 추출
+        const selectors = [
+          '.rank-text', '.keyword-text', '.list-item a', '.rank-list li',
+          '.popular-keyword li', 'ol li', '.realtime-rank li', 'a[href*="keyword"]',
+        ];
+        
+        for (const sel of selectors) {
+          $(sel).each((i, el) => {
+            const text = $(el).text().trim().replace(/^\d+\s*/, '');
+            if (text && text.length >= 2 && text.length <= 30) {
+              extractSignalKeywords(keywords, seen, text, i + 1);
+            }
+          });
+          if (keywords.length >= 5) break;
+        }
 
-        for (const part of parts) {
-          const words = part.split(/\s+/);
-
-          // 2단어 이하면 그대로 사용
-          if (words.length <= 2) {
-            addSignalKeyword(keywords, seen, part, item.rank);
-          } else {
-            // 3단어 이상이면 첫 1~2단어 추출 (보통 인물명/핵심 토픽)
-            addSignalKeyword(keywords, seen, words[0], item.rank);
-            if (words.length >= 2) {
-              addSignalKeyword(keywords, seen, words.slice(0, 2).join(' '), item.rank);
+        // 메타 태그나 JSON-LD에서 키워드 추출 시도
+        if (keywords.length === 0) {
+          const bodyText = $.text();
+          const rankMatches = bodyText.match(/\d+\s+([가-힣a-zA-Z\s]{2,20})/g) || [];
+          for (const match of rankMatches.slice(0, 10)) {
+            const kw = match.replace(/^\d+\s*/, '').trim();
+            if (kw.length >= 2) {
+              extractSignalKeywords(keywords, seen, kw, keywords.length + 1);
             }
           }
         }
+      } catch (webErr) {
+        logger.debug(`[크롤러] Signal.bz 웹 크롤링도 실패: ${webErr.message}`);
       }
     }
 
@@ -357,6 +434,26 @@ async function crawlSignalBz() {
   } catch (error) {
     logger.error(`[크롤러] Signal.bz 크롤링 실패: ${error.message}`);
     return [];
+  }
+}
+
+function extractSignalKeywords(keywords, seen, rawKeyword, rank) {
+  const text = rawKeyword.trim();
+  // 쉼표로 분리된 복합 키워드 → 각각 처리
+  const parts = text.split(/[,，]/).map(p => p.trim()).filter(p => p.length >= 2);
+  
+  for (const part of parts) {
+    const words = part.split(/\s+/);
+    // 2단어 이하면 그대로
+    if (words.length <= 2) {
+      addSignalKeyword(keywords, seen, part, rank);
+    } else {
+      // 3단어 이상이면 첫 1~2단어 추출
+      addSignalKeyword(keywords, seen, words[0], rank);
+      if (words.length >= 2) {
+        addSignalKeyword(keywords, seen, words.slice(0, 2).join(' '), rank);
+      }
+    }
   }
 }
 
@@ -371,8 +468,7 @@ function addSignalKeyword(keywords, seen, text, rank) {
 // ========== 모든 소스 크롤링 ==========
 async function crawlAll() {
   logger.info('====== 전체 실시간 검색어 크롤링 시작 ======');
-  logger.info('소스: Google Trends (일반+엔터), Zum, Nate, Signal.bz');
-  logger.info('※ Naver/Daum 헤드라인 추출 크롤러 제거됨 (쓰레기 키워드 방지)');
+  logger.info('소스: Google Trends (일반+엔터), Zum, Nate, Signal.bz, Naver');
 
   const results = await Promise.allSettled([
     crawlGoogleTrends(),
@@ -380,10 +476,11 @@ async function crawlAll() {
     crawlZum(),
     crawlNate(),
     crawlSignalBz(),
+    crawlNaverMobile(),
   ]);
 
   const allKeywords = [];
-  const sources = ['Google Trends', 'Google Trends 엔터', 'Zum', 'Nate', 'Signal.bz'];
+  const sources = ['Google Trends', 'Google Trends 엔터', 'Zum', 'Nate', 'Signal.bz', 'Naver'];
 
   results.forEach((result, index) => {
     if (result.status === 'fulfilled' && Array.isArray(result.value)) {
@@ -441,6 +538,7 @@ module.exports = {
   crawlZum,
   crawlNate,
   crawlSignalBz,
+  crawlNaverMobile,
   crawlAll,
   isGoodKeyword,
 };

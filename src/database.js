@@ -316,6 +316,23 @@ function deleteGarbageKeywords(isGoodKeywordFn) {
   return deleted;
 }
 
+// 트렌딩 키워드 재처리: processed=0으로 리셋하여 다시 기사 생성 가능하게
+function resetKeywordForReprocessing(keyword) {
+  // 해당 키워드의 가장 최근 항목을 processed=0으로 설정
+  const existing = queryOne(
+    `SELECT id FROM keywords WHERE keyword = ? ORDER BY detected_at DESC LIMIT 1`,
+    [keyword]
+  );
+  if (existing) {
+    return runSql('UPDATE keywords SET processed = 0 WHERE id = ?', [existing.id]);
+  }
+  // 없으면 새로 삽입
+  return runSql(
+    `INSERT INTO keywords (keyword, source, rank, detected_at, processed) VALUES (?, 'reprocess', 0, datetime('now', 'localtime'), 0)`,
+    [keyword]
+  );
+}
+
 // ========== 로그 ==========
 function logCrawl(source, keywordsFound, newKeywords) {
   return runSql('INSERT INTO crawl_logs (source, keywords_found, new_keywords) VALUES (?, ?, ?)', [source, keywordsFound, newKeywords]);
@@ -334,7 +351,8 @@ function getStats() {
 
 module.exports = {
   getDb, dbReady, insertKeyword, getUnprocessedKeywords, markKeywordProcessed,
-  getRecentKeywords, isKeywordRecent, insertArticle, getArticles, getArticleBySlug,
+  getRecentKeywords, isKeywordRecent, resetKeywordForReprocessing,
+  insertArticle, getArticles, getArticleBySlug,
   getArticleById, incrementViews, getArticleCount, getTodayArticleCount,
   hasArticleForKeyword, updateArticleImage, getArticlesWithoutImage,
   getLowQualityArticles, updateArticle, updateArticleKeyword, deleteArticle,

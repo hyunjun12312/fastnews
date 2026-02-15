@@ -102,16 +102,34 @@ async function runPipeline() {
     dashboard.emitEvent('log', `✅ STEP 1 완료: ${keywords.length}개 키워드 (신규 ${newKeywordsCount}개)`);
 
     if (newKeywordsCount === 0) {
-      logger.info('[STEP 1] 새로운 키워드가 없습니다. 파이프라인 종료.');
-      dashboard.emitEvent('log', 'ℹ️ 새 키워드 없음, 대기 중...');
+      logger.info('[STEP 1] 새로운 키워드 없음. 기존 트렌드 키워드 중 기사 없는 것 확인...');
       
-      // 인덱스 페이지는 항상 갱신 (트렌드 키워드 포함)
-      const publishedArticles = db.getArticles({ status: 'published', limit: 50 });
-      const trendKeywords = keywords.map(k => k.keyword);
-      publisher.updateIndex(publishedArticles, trendKeywords);
+      // 현재 트렌딩 중인 키워드 중 최근 기사가 없는 것이 있으면 재처리 대상으로 전환
+      let reprocessCount = 0;
+      for (const kw of keywords) {
+        if (!db.hasArticleForKeyword(kw.keyword)) {
+          // 이 키워드는 현재 트렌딩이지만 최근 기사가 없음 → 재삽입
+          db.resetKeywordForReprocessing(kw.keyword);
+          reprocessCount++;
+          logger.info(`[재처리] "${kw.keyword}" - 최근 기사 없음, 재처리 대상`);
+        }
+      }
       
-      dashboard.emitEvent('stats', db.getStats());
-      return;
+      if (reprocessCount === 0) {
+        logger.info('[STEP 1] 모든 트렌드 키워드에 최근 기사 존재. 대기 중...');
+        dashboard.emitEvent('log', 'ℹ️ 모든 키워드에 최근 기사 존재, 대기 중...');
+        
+        // 인덱스 페이지는 항상 갱신
+        const publishedArticles = db.getArticles({ status: 'published', limit: 50 });
+        const trendKeywords = keywords.map(k => k.keyword);
+        publisher.updateIndex(publishedArticles, trendKeywords);
+        
+        dashboard.emitEvent('stats', db.getStats());
+        return;
+      }
+      
+      logger.info(`[STEP 1] ${reprocessCount}개 트렌드 키워드 재처리 예정`);
+      dashboard.emitEvent('log', `🔄 ${reprocessCount}개 키워드 재처리`);
     }
 
     // ===== STEP 2: 미처리 키워드 처리 =====
