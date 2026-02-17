@@ -19,14 +19,97 @@ const SITEMAP_DIR = path.join(OUTPUT_DIR, 'sitemap');
 
 logger.info(`[퍼블리셔] 출력 디렉토리: ${OUTPUT_DIR} ${DATA_DIR ? '(Railway Volume)' : '(로컬)'}`);
 
+const NAV_CATEGORIES = ['연예', '스포츠', '경제', '사회', 'IT·과학', '정치'];
+
+function normalizeSlug(slug) {
+  return String(slug || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map(segment => segment.replace(/\.\./g, '-'))
+    .join('-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 // URL 내 한글 등 비-ASCII 문자를 퍼센트 인코딩 (사이트맵/RSS 표준 준수)
 function encodeSlugForUrl(slug) {
-  return slug.split('/').map(s => encodeURIComponent(s)).join('/');
+  const safeSlug = normalizeSlug(slug);
+  return safeSlug.split('/').map(s => encodeURIComponent(s)).join('/');
+}
+
+function articlePathFromSlug(slug) {
+  return `/articles/${encodeSlugForUrl(slug)}.html`;
+}
+
+function categoryPath(category) {
+  return `/category/${encodeURIComponent(category)}`;
+}
+
+function writeFileAtomic(filePath, content) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tempPath, content, 'utf8');
+  fs.renameSync(tempPath, filePath);
+}
+
+function cleanupSplitSitemaps(keepPages = 0) {
+  if (!fs.existsSync(SITEMAP_DIR)) return;
+  const files = fs.readdirSync(SITEMAP_DIR);
+  files
+    .filter(name => /^sitemap-\d+\.xml$/.test(name))
+    .forEach(name => {
+      const page = Number(name.match(/\d+/)?.[0] || 0);
+      if (page > keepPages || keepPages === 0) {
+        fs.unlinkSync(path.join(SITEMAP_DIR, name));
+      }
+    });
+}
+
+function stripMarkdown(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[>*_~\-]{1,3}/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildMetaDescription(summary, content, keyword) {
+  const base = stripMarkdown(summary) || stripMarkdown(content) || `${keyword || '뉴스'} 관련 최신 소식`;
+  const clipped = base.length > 155 ? `${base.substring(0, 152)}...` : base;
+  return clipped || `${keyword || '뉴스'} 관련 최신 소식`;
+}
+
+function wrapCdata(text) {
+  return `<![CDATA[${String(text || '').replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
+}
+
+function categorySeoLabel(category) {
+  return category === '뉴스' ? '최신 뉴스' : `${category} 뉴스`;
 }
 
 function escapeHtml(text) {
   if (!text) return '';
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+// JSON-LD용 이스케이프 (HTML 엔티티가 아닌 JSON 표준 이스케이프)
+function escapeJson(text) {
+  if (!text) return '';
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
 }
 
 function formatDate(dateStr) {
@@ -54,12 +137,14 @@ function timeAgo(dateStr) {
 
 // ========== 공통 CSS ==========
 // ========== 공통 HEAD 메타 (favicon, theme-color, font preload) ==========
-function commonHeadMeta() {
+function commonHeadMeta(currentPath) {
+  const pageUrl = currentPath ? `${config.site.url}${currentPath}` : `${config.site.url}/`;
   return `
   <link rel="icon" href="${config.site.url}/favicon.ico" type="image/x-icon">
   <link rel="icon" type="image/png" sizes="32x32" href="${config.site.url}/favicon-32x32.png">
   <meta name="theme-color" content="#1e3a5f">
-  <link rel="alternate" hreflang="ko" href="${config.site.url}/">
+  <link rel="alternate" hreflang="ko" href="${pageUrl}">
+  <link rel="alternate" hreflang="x-default" href="${pageUrl}">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preload" as="style" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"></noscript>`;
@@ -650,7 +735,7 @@ function trendTickerHTML(trendKeywords, articles) {
     const rank = (i % limitedKw.length) + 1;
     const keyword = typeof kw === 'string' ? kw : kw.keyword;
     const slug = articleMap[keyword];
-    const href = slug ? `/articles/${slug}.html` : `https://search.naver.com/search.naver?query=${encodeURIComponent(keyword)}`;
+    const href = slug ? articlePathFromSlug(slug) : `https://search.naver.com/search.naver?query=${encodeURIComponent(keyword)}`;
     const target = slug ? '' : ' target="_blank" rel="noopener"';
     const cls = rank <= 3 ? 'top' : '';
     return `<a class="ticker-item" href="${href}"${target}><span class="ticker-rank ${cls}">${rank}</span><span class="ticker-kw">${escapeHtml(keyword)}</span></a><span class="ticker-sep">|</span>`;
@@ -671,6 +756,7 @@ function trendTickerHTML(trendKeywords, articles) {
 function headerHTML() {
   const now = new Date();
   const dateStr = now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  const navLinks = NAV_CATEGORIES.map(category => `<a class="nav-link" href="${categoryPath(category)}">${escapeHtml(category)}</a>`).join('\n      ');
   return `
   <header class="site-header">
     <div class="header-inner">
@@ -685,12 +771,7 @@ function headerHTML() {
   <nav class="nav-bar">
     <div class="nav-inner">
       <a class="nav-link active" href="/">홈</a>
-      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EC%86%8D%EB%B3%B4&sort=1" target="_blank" rel="noopener">속보</a>
-      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EC%82%AC%ED%9A%8C&sort=1" target="_blank" rel="noopener">사회</a>
-      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EA%B2%BD%EC%A0%9C&sort=1" target="_blank" rel="noopener">경제</a>
-      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EC%97%B0%EC%98%88&sort=1" target="_blank" rel="noopener">연예</a>
-      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=%EC%8A%A4%ED%8F%AC%EC%B8%A0&sort=1" target="_blank" rel="noopener">스포츠</a>
-      <a class="nav-link" href="https://search.naver.com/search.naver?where=news&query=IT%C2%B7%EA%B3%BC%ED%95%99&sort=1" target="_blank" rel="noopener">IT·과학</a>
+      ${navLinks}
     </div>
   </nav>`;
 }
@@ -707,7 +788,7 @@ function footerHTML() {
         </div>
         <div class="footer-links">
           <a href="/">홈</a>
-          <a href="/">전체기사</a>
+          <a href="/archive">전체기사</a>
           <a href="/rss.xml">RSS</a>
           <a href="/sitemap.xml">사이트맵</a>
         </div>
@@ -715,6 +796,145 @@ function footerHTML() {
       <div class="footer-copy">&copy; ${new Date().getFullYear()} ${escapeHtml(config.site.title)}. All rights reserved.</div>
     </div>
   </footer>`;
+}
+
+// ========== 카테고리 분류 ==========
+const CATEGORY_MAP = {
+  '연예': ['아이돌', '드라마', '배우', '가수', '연예인', '예능', '방송', '뮤직', '콘서트', '아이브', '방탄', 'BTS', 'K-pop', '뮤직어워즈', '레드카펫', '열애', '결혼', '이혼', '스타', '팬', '엔터', '음원', '앨범', '컴백', '데뷔'],
+  '스포츠': ['야구', '축구', '농구', '배구', '골프', '올림픽', '월드컵', 'KBO', 'EPL', 'LCK', '선수', '감독', '경기', '우승', '승리', '패배', '리그', '대회', 'e스포츠', '쇼트트랙', '스케이팅', '피겨'],
+  '경제': ['주식', '코스피', '코스닥', '부동산', '금리', '환율', '투자', '경제', '기업', '매출', '수출', '물가', '임금', '취업', 'GDP', '은행'],
+  '사회': ['사건', '사고', '재판', '검찰', '경찰', '법원', '교육', '환경', '의료', '복지', '인구', '저출생', '고령화'],
+  'IT·과학': ['AI', '인공지능', '반도체', '삼성', '애플', '구글', '네이버', '카카오', '테슬라', '자율주행', '로봇', '우주', '과학', 'IT', '앱', '게임'],
+  '정치': ['대통령', '국회', '정당', '선거', '여당', '야당', '정치', '외교', '안보', '장관', '총리'],
+};
+
+function categorizeArticle(keyword, title, tags) {
+  const text = `${keyword} ${title} ${(tags || []).join(' ')}`.toLowerCase();
+  let bestCategory = '뉴스';
+  let bestScore = 0;
+  for (const [category, keywords] of Object.entries(CATEGORY_MAP)) {
+    const score = keywords.filter(k => text.includes(k.toLowerCase())).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestCategory = category;
+    }
+  }
+  return bestCategory;
+}
+
+// ========== 관련 기사 매칭 (키워드/태그 기반) ==========
+function getRelatedArticles(currentArticle, allArticles, maxCount = 6) {
+  if (!allArticles || allArticles.length === 0) return [];
+  
+  const currentTags = new Set(
+    (typeof currentArticle.tags === 'string' ? currentArticle.tags.split(',') : (currentArticle.tags || []))
+      .map(t => t.trim().toLowerCase())
+  );
+  const currentKeyword = (currentArticle.keyword || '').toLowerCase();
+  const currentCategory = categorizeArticle(currentArticle.keyword, currentArticle.title, currentArticle.tags);
+
+  const scored = allArticles
+    .filter(a => a.slug !== currentArticle.slug && a.title !== currentArticle.title)
+    .map(a => {
+      let score = 0;
+      const aKeyword = (a.keyword || '').toLowerCase();
+      const aTags = (typeof a.tags === 'string' ? a.tags.split(',') : (a.tags || []))
+        .map(t => t.trim().toLowerCase());
+      const aCategory = categorizeArticle(a.keyword, a.title, a.tags);
+
+      // 같은 키워드: 최고 점수
+      if (aKeyword === currentKeyword) score += 10;
+      // 키워드가 상대방 태그에 포함
+      if (aTags.includes(currentKeyword)) score += 5;
+      if (currentTags.has(aKeyword)) score += 5;
+      // 태그 겹침
+      const tagOverlap = aTags.filter(t => currentTags.has(t)).length;
+      score += tagOverlap * 3;
+      // 같은 카테고리
+      if (aCategory === currentCategory) score += 2;
+      // 최신 기사 가산점
+      const ageHours = (Date.now() - new Date(a.published_at || a.created_at).getTime()) / 3600000;
+      if (ageHours < 6) score += 2;
+      else if (ageHours < 24) score += 1;
+
+      return { article: a, score };
+    })
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  // 점수 있는 기사로 채우고, 부족하면 최신 기사로 보충
+  const results = scored.slice(0, maxCount).map(s => s.article);
+  if (results.length < maxCount) {
+    const usedSlugs = new Set(results.map(r => r.slug));
+    usedSlugs.add(currentArticle.slug);
+    const recent = allArticles
+      .filter(a => !usedSlugs.has(a.slug))
+      .slice(0, maxCount - results.length);
+    results.push(...recent);
+  }
+  return results;
+}
+
+// ========== 읽기 시간 계산 ==========
+function estimateReadingTime(content) {
+  if (!content) return 1;
+  // 한국어: 분당 약 500자
+  const charCount = content.replace(/[#*\-\n\s]/g, '').length;
+  return Math.max(1, Math.ceil(charCount / 500));
+}
+
+// ========== 글자 수 계산 ==========
+function countWords(content) {
+  if (!content) return 0;
+  return content.replace(/[#*\-\n\s]/g, '').length;
+}
+
+// ========== FAQ 스키마 생성 (검색 의도 기반) ==========
+function generateFAQSchema(keyword, content) {
+  const faqs = [];
+  const kw = escapeJson(keyword);
+  
+  // 콘텐츠에서 자연스럽게 FAQ 추출 (## 섹션 기반)
+  const sections = content.split(/##\s+/);
+  sections.forEach(section => {
+    const lines = section.trim().split('\n').filter(l => l.trim());
+    if (lines.length >= 2) {
+      const heading = lines[0].trim().replace(/[#*]/g, '');
+      const body = lines.slice(1, 3).join(' ').replace(/[#*]/g, '').trim();
+      if (heading.length > 5 && body.length > 20) {
+        faqs.push({
+          q: `${keyword} ${heading}은(는) 무엇인가요?`,
+          a: body.substring(0, 200)
+        });
+      }
+    }
+  });
+
+  // 기본 FAQ 추가
+  faqs.push({
+    q: `${keyword} 관련 최신 소식은?`,
+    a: `${keyword} 관련 최신 뉴스와 심층 분석을 확인하세요.`
+  });
+
+  if (faqs.length === 0) return '';
+
+  return `
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      ${faqs.slice(0, 5).map(faq => `{
+        "@type": "Question",
+        "name": "${escapeJson(faq.q)}",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "${escapeJson(faq.a)}"
+        }
+      }`).join(',\n      ')}
+    ]
+  }
+  </script>`;
 }
 
 // ========== 기사 상세 페이지 ==========
@@ -725,8 +945,15 @@ function articleTemplate(article, trendKeywords, relatedArticles) {
   const publishDate = isNaN(parsedDate.getTime()) ? new Date().toISOString() : parsedDate.toISOString();
   const sourceUrls = typeof article.source_urls === 'string'
     ? JSON.parse(article.source_urls || '[]') : (article.source_urls || []);
-  const pageUrl = `/articles/${article.slug}.html`;
+  const pageUrl = articlePathFromSlug(article.slug);
   const articleImage = article.image || '';
+  const category = categorizeArticle(article.keyword, article.title, article.tags);
+  const readingTime = estimateReadingTime(article.content);
+  const wordCount = countWords(article.content);
+  const tags = typeof article.tags === 'string' ? article.tags.split(',').map(t => t.trim()).filter(Boolean) : (article.tags || [article.keyword]);
+  const allKeywords = [...new Set([article.keyword, ...tags, category, '뉴스', `${article.keyword} 최신`])].filter(Boolean);
+  const defaultImage = `${config.site.url}/logo.png`;
+  const metaDescription = buildMetaDescription(article.summary, article.content, article.keyword);
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -734,10 +961,11 @@ function articleTemplate(article, trendKeywords, relatedArticles) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(article.title)} - ${config.site.title}</title>
-  <meta name="description" content="${escapeHtml(article.summary || '')}">
-  <meta name="keywords" content="${escapeHtml(article.keyword || '')}, 뉴스, ${escapeHtml(article.keyword || '')} 최신">
+  <meta name="description" content="${escapeHtml(metaDescription)}">
+  <meta name="keywords" content="${escapeHtml(allKeywords.join(', '))}">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
   <meta name="author" content="${config.site.title}">
+  <meta name="news_keywords" content="${escapeHtml(allKeywords.slice(0, 10).join(', '))}">
   <link rel="canonical" href="${config.site.url}${pageUrl}">
   <link rel="alternate" type="application/rss+xml" title="${config.site.title} RSS" href="${config.site.url}/rss.xml">
   ${config.site.naverVerification ? `<meta name="naver-site-verification" content="${config.site.naverVerification}">` : ''}
@@ -745,41 +973,46 @@ function articleTemplate(article, trendKeywords, relatedArticles) {
 
   <meta property="og:type" content="article">
   <meta property="og:title" content="${escapeHtml(article.title)}">
-  <meta property="og:description" content="${escapeHtml(article.summary || '')}">
+  <meta property="og:description" content="${escapeHtml(metaDescription)}">
   <meta property="og:url" content="${config.site.url}${pageUrl}">
   <meta property="og:site_name" content="${config.site.title}">
   <meta property="og:locale" content="ko_KR">
-  ${articleImage ? `<meta property="og:image" content="${escapeHtml(articleImage)}">
+  <meta property="og:image" content="${escapeHtml(articleImage || defaultImage)}">
+  <meta property="og:image:alt" content="${escapeHtml(article.title)}">
   <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">` : ''}
+  <meta property="og:image:height" content="630">
   <meta property="article:published_time" content="${publishDate}">
   <meta property="article:modified_time" content="${publishDate}">
-  <meta property="article:section" content="뉴스">
-  <meta property="article:tag" content="${escapeHtml(article.keyword || '')}">
+  <meta property="article:section" content="${escapeHtml(category)}">
+  ${tags.map(tag => `<meta property="article:tag" content="${escapeHtml(tag)}">`).join('\n  ')}
 
-  <meta name="twitter:card" content="${articleImage ? 'summary_large_image' : 'summary'}">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escapeHtml(article.title)}">
-  <meta name="twitter:description" content="${escapeHtml(article.summary || '')}">
-  ${articleImage ? `<meta name="twitter:image" content="${escapeHtml(articleImage)}">` : ''}
+  <meta name="twitter:description" content="${escapeHtml(metaDescription)}">
+  <meta name="twitter:image" content="${escapeHtml(articleImage || defaultImage)}">
 
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
-    "headline": "${escapeHtml(article.title)}",
-    "description": "${escapeHtml(article.summary || '')}",
+    "headline": "${escapeJson(article.title)}",
+    "description": "${escapeJson(metaDescription)}",
     "datePublished": "${publishDate}",
     "dateModified": "${publishDate}",
-    "author": { "@type": "Organization", "name": "${config.site.title}" },
+    "author": { "@type": "Organization", "name": "${escapeJson(config.site.title)}", "url": "${config.site.url}" },
     "publisher": {
       "@type": "Organization",
-      "name": "${config.site.title}",
+      "name": "${escapeJson(config.site.title)}",
       "logo": { "@type": "ImageObject", "url": "${config.site.url}/logo.png" }
     },
     "mainEntityOfPage": { "@type": "WebPage", "@id": "${config.site.url}${pageUrl}" },
-    ${articleImage ? `"image": "${escapeHtml(articleImage)}",` : ''}
-    "keywords": "${escapeHtml(article.keyword || '')}",
-    "articleSection": "뉴스"
+    "image": "${escapeJson(articleImage || defaultImage)}",
+    "keywords": ${JSON.stringify(allKeywords)},
+    "articleSection": "${escapeJson(category)}",
+    "genre": "${escapeJson(category)}",
+    "isAccessibleForFree": true,
+    "wordCount": ${wordCount},
+    "inLanguage": "ko"
   }
   </script>
 
@@ -789,12 +1022,15 @@ function articleTemplate(article, trendKeywords, relatedArticles) {
     "@type": "BreadcrumbList",
     "itemListElement": [
       { "@type": "ListItem", "position": 1, "name": "홈", "item": "${config.site.url}/" },
-      { "@type": "ListItem", "position": 2, "name": "${escapeHtml(article.keyword || '')}", "item": "${config.site.url}${pageUrl}" }
+      { "@type": "ListItem", "position": 2, "name": "${escapeJson(category)}", "item": "${config.site.url}/category/${encodeURIComponent(category)}" },
+      { "@type": "ListItem", "position": 3, "name": "${escapeJson(article.title)}", "item": "${config.site.url}${pageUrl}" }
     ]
   }
   </script>
 
-  ${commonHeadMeta()}
+  ${generateFAQSchema(article.keyword, article.content || '')}
+
+  ${commonHeadMeta(pageUrl)}
   ${COMMON_CSS}
 </head>
 <body>
@@ -802,24 +1038,30 @@ function articleTemplate(article, trendKeywords, relatedArticles) {
   ${trendTickerHTML(trendKeywords)}
 
   <div class="container">
-    <nav class="breadcrumb">
-      <a href="/">홈</a><span class="sep">›</span><span>${escapeHtml(article.keyword || '')}</span>
+    <nav class="breadcrumb" aria-label="브레드크럼">
+      <a href="/">홈</a><span class="sep">›</span><a href="${categoryPath(category)}">${escapeHtml(category)}</a><span class="sep">›</span><span>${escapeHtml(article.keyword || '')}</span>
     </nav>
 
-    <article class="article-page">
+    <article class="article-page" itemscope itemtype="https://schema.org/NewsArticle">
       <header class="article-page-header">
-        <div class="article-page-kw">${escapeHtml(article.keyword || '')}</div>
-        <h1 class="article-page-title">${escapeHtml(article.title)}</h1>
-        ${articleImage ? `<img class="article-page-hero-img" src="${escapeHtml(articleImage)}" alt="${escapeHtml(article.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">` : ''}
+        <div class="article-page-kw"><a href="${categoryPath(category)}" style="color:inherit;">${escapeHtml(category)}</a> · ${escapeHtml(article.keyword || '')}</div>
+        <h1 class="article-page-title" itemprop="headline">${escapeHtml(article.title)}</h1>
+        ${articleImage ? `<img class="article-page-hero-img" src="${escapeHtml(articleImage)}" alt="${escapeHtml(article.keyword + ' - ' + article.title)}" loading="eager" fetchpriority="high" referrerpolicy="no-referrer" onerror="this.style.display='none'" itemprop="image">` : ''}
         <div class="article-page-meta">
-          <span>${config.site.title}</span>
+          <span itemprop="publisher" itemscope itemtype="https://schema.org/Organization"><span itemprop="name">${config.site.title}</span></span>
           <span>|</span>
-          <span>${formatDate(publishDate)}</span>
+          <time datetime="${publishDate}" itemprop="datePublished">${formatDate(publishDate)}</time>
+          <span>|</span>
+          <span>읽기 ${readingTime}분</span>
         </div>
       </header>
 
-      <div class="article-page-body">
+      <div class="article-page-body" itemprop="articleBody">
         ${htmlContent}
+      </div>
+
+      <div class="article-tags" style="max-width:680px;margin:16px auto;padding:0 20px;display:flex;flex-wrap:wrap;gap:8px;">
+        ${tags.map(tag => `<a href="${categoryPath(categorizeArticle(tag, '', []))}" class="tag-link" style="display:inline-block;padding:4px 12px;background:#f0f0f0;border-radius:16px;font-size:0.82rem;color:#555;">#${escapeHtml(tag)}</a>`).join('\n        ')}
       </div>
 
       ${sourceUrls.filter(u => !u.includes('news.google.com/rss')).length > 0 ? `
@@ -844,8 +1086,8 @@ function articleTemplate(article, trendKeywords, relatedArticles) {
     <div style="max-width:680px;margin:20px auto 0;padding:0 20px;">
       <div class="section-title"><span class="bar"></span> 관련 기사</div>
       <div class="article-list">
-        ${relatedArticles.slice(0, 5).map(ra => `
-        <a class="article-item" href="/articles/${ra.slug}.html">
+        ${relatedArticles.slice(0, 6).map(ra => `
+        <a class="article-item" href="${articlePathFromSlug(ra.slug)}">
           ${ra.image
             ? `<img class="article-thumb" src="${escapeHtml(ra.image)}" alt="${escapeHtml(ra.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=\\'article-thumb-empty\\'>${THUMB_SVG}</div>'">`
             : `<div class="article-thumb-empty">${THUMB_SVG}</div>`}
@@ -888,7 +1130,7 @@ function indexTemplate(articles, trendKeywords) {
     if (heroArticle.image) {
       heroHTML = `
     <div class="hero">
-      <a href="/articles/${heroArticle.slug}.html">
+      <a href="${articlePathFromSlug(heroArticle.slug)}">
         <div class="hero-img-wrap">
           <img src="${escapeHtml(heroArticle.image)}" alt="${escapeHtml(heroArticle.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="imgFail(this, true)">
           <div class="hero-overlay">
@@ -905,7 +1147,7 @@ function indexTemplate(articles, trendKeywords) {
     } else {
       heroHTML = `
     <div class="hero">
-      <a href="/articles/${heroArticle.slug}.html">
+      <a href="${articlePathFromSlug(heroArticle.slug)}">
         <div class="hero-body">
           <div class="hero-kw">${escapeHtml(heroArticle.keyword || '')}</div>
           <h1 class="hero-title-text">${escapeHtml(heroArticle.title)}</h1>
@@ -918,7 +1160,7 @@ function indexTemplate(articles, trendKeywords) {
   }
 
   const articleCards = restArticles.map(article => `
-    <a class="article-item" href="/articles/${article.slug}.html">
+    <a class="article-item" href="${articlePathFromSlug(article.slug)}">
       ${article.image
         ? `<img class="article-thumb" src="${escapeHtml(article.image)}" alt="${escapeHtml(article.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="imgFail(this, false)">`
         : `<div class="article-thumb-empty">${THUMB_SVG}</div>`}
@@ -941,7 +1183,7 @@ function indexTemplate(articles, trendKeywords) {
     const numClass = i < 3 ? 'top' : '';
     const badge = i < 5 ? '<span class="rank-badge">NEW</span>' : '';
     const slug = articleMap[keyword];
-    const href = slug ? `/articles/${slug}.html` : `https://search.naver.com/search.naver?query=${encodeURIComponent(keyword)}`;
+    const href = slug ? articlePathFromSlug(slug) : `https://search.naver.com/search.naver?query=${encodeURIComponent(keyword)}`;
     const target = slug ? '' : ' target="_blank" rel="noopener"';
     return `
       <a class="rank-item" href="${href}"${target}>
@@ -959,7 +1201,7 @@ function indexTemplate(articles, trendKeywords) {
   <title>${config.site.title} - ${config.site.description}</title>
   <meta name="description" content="${config.site.description}">
   <meta name="keywords" content="실시간 뉴스, 트렌드 뉴스, 실시간 검색어, 인기 검색어, 최신 뉴스">
-  <meta name="robots" content="index, follow">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
   <meta name="author" content="${config.site.title}">
   <link rel="canonical" href="${config.site.url}/">
   <link rel="alternate" type="application/rss+xml" title="${config.site.title} RSS" href="${config.site.url}/rss.xml">
@@ -972,12 +1214,16 @@ function indexTemplate(articles, trendKeywords) {
   <meta property="og:url" content="${config.site.url}/">
   <meta property="og:site_name" content="${config.site.title}">
   <meta property="og:locale" content="ko_KR">
+  <meta property="og:image" content="${config.site.url}/logo.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
 
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="${config.site.title}">
   <meta name="twitter:description" content="${config.site.description}">
+  <meta name="twitter:image" content="${config.site.url}/logo.png">
 
-  ${commonHeadMeta()}
+  ${commonHeadMeta('/')}
 
   <script type="application/ld+json">
   {
@@ -988,7 +1234,7 @@ function indexTemplate(articles, trendKeywords) {
     "url": "${config.site.url}/",
     "potentialAction": {
       "@type": "SearchAction",
-      "target": "${config.site.url}/?q={search_term_string}",
+      "target": "https://www.google.com/search?q=site:${new URL(config.site.url).hostname}+{search_term_string}",
       "query-input": "required name=search_term_string"
     }
   }
@@ -1002,8 +1248,8 @@ function indexTemplate(articles, trendKeywords) {
       ${articles.slice(0, 10).map((a, i) => `{
         "@type": "ListItem",
         "position": ${i + 1},
-        "url": "${config.site.url}/articles/${a.slug}.html",
-        "name": "${escapeHtml(a.title)}"
+        "url": "${config.site.url}/articles/${encodeSlugForUrl(a.slug)}.html",
+        "name": "${escapeJson(a.title)}"
       }`).join(',\n      ')}
     ]
   }
@@ -1042,7 +1288,18 @@ function indexTemplate(articles, trendKeywords) {
 
   ${footerHTML()}
 
-  <script>setTimeout(function(){ location.reload(); }, 5*60*1000);</script>
+  <script>
+  // 새로고침 대신 fetch로 업데이트 체크 (CLS 방지)
+  setTimeout(function(){
+    fetch(location.href).then(function(r){return r.text()}).then(function(html){
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(html,'text/html');
+      var newMain = doc.querySelector('.main-grid');
+      var oldMain = document.querySelector('.main-grid');
+      if(newMain && oldMain) oldMain.innerHTML = newMain.innerHTML;
+    }).catch(function(){});
+  }, 5*60*1000);
+  </script>
 </body>
 </html>`;
 }
@@ -1096,28 +1353,46 @@ ${urls}
 
 function generateSitemap(articles, baseUrl) {
   if (!baseUrl) baseUrl = config.site.url;
-  const urls = articles.map(a => `
-  <url>
-    <loc>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</loc>
-    <lastmod>${new Date(a.published_at || a.created_at || Date.now()).toISOString()}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.8</priority>
-  </url>`).join('');
+  const nowIso = new Date().toISOString();
+  const latestArticleIso = articles.length > 0
+    ? new Date(Math.max(...articles.map(a => new Date(a.published_at || a.created_at || Date.now()).getTime()))).toISOString()
+    : nowIso;
+
+  // 기사 연령에 따른 priority 차등 부여
+  const urls = articles.map(a => {
+    const ageHours = (Date.now() - new Date(a.published_at || a.created_at || Date.now()).getTime()) / 3600000;
+    let priority = '0.8';
+    if (ageHours < 6) priority = '0.9';
+    else if (ageHours < 24) priority = '0.8';
+    else if (ageHours < 72) priority = '0.7';
+    else priority = '0.6';
+
+    const imageTag = a.image ? `\n    <image:image>\n      <image:loc>${escapeHtml(a.image)}</image:loc>\n      <image:title>${escapeHtml(a.title)}</image:title>\n    </image:image>` : '';
+
+    return `\n  <url>\n    <loc>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</loc>\n    <lastmod>${new Date(a.published_at || a.created_at || Date.now()).toISOString()}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>${priority}</priority>${imageTag}\n  </url>`;
+  }).join('');
+
+  // 카테고리 페이지 URL
+  const categories = [...new Set(articles.map(a => categorizeArticle(a.keyword, a.title, a.tags)))];
+  const categoryUrls = categories.map(cat => {
+    const catArticles = articles.filter(a => categorizeArticle(a.keyword, a.title, a.tags) === cat);
+    const catLatestIso = catArticles.length > 0
+      ? new Date(Math.max(...catArticles.map(a => new Date(a.published_at || a.created_at || Date.now()).getTime()))).toISOString()
+      : nowIso;
+    return `\n  <url>\n    <loc>${baseUrl}${categoryPath(cat)}</loc>\n    <lastmod>${catLatestIso}</lastmod>\n    <changefreq>hourly</changefreq>\n    <priority>0.7</priority>\n  </url>`;
+  }).join('');
+
+  const archiveUrl = `\n  <url>\n    <loc>${baseUrl}/archive</loc>\n    <lastmod>${latestArticleIso}</lastmod>\n    <changefreq>hourly</changefreq>\n    <priority>0.8</priority>\n  </url>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>${baseUrl}/</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${latestArticleIso}</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>${baseUrl}/archive</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
-    <changefreq>hourly</changefreq>
-    <priority>0.6</priority>
-  </url>${urls}
+  </url>${archiveUrl}${categoryUrls}${urls}
 </urlset>`;
 }
 
@@ -1127,11 +1402,13 @@ function generateNewsSitemap(articles, baseUrl) {
   const recentArticles = articles.filter(a => {
     const d = new Date(a.published_at || a.created_at);
     return (Date.now() - d.getTime()) < 48 * 3600000;
-  });
+  }).slice(0, 1000);
 
   const urls = recentArticles.map(a => {
     const pubDate = new Date(a.published_at || a.created_at || Date.now());
     const isoDate = pubDate.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+    const tags = typeof a.tags === 'string' ? a.tags.split(',').map(t => t.trim()).filter(Boolean) : (a.tags || [a.keyword]);
+    const newsKeywords = [...new Set([a.keyword, ...tags])].filter(Boolean).slice(0, 10).join(', ');
     return `
   <url>
     <loc>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</loc>
@@ -1142,6 +1419,7 @@ function generateNewsSitemap(articles, baseUrl) {
       </news:publication>
       <news:publication_date>${isoDate}</news:publication_date>
       <news:title>${escapeHtml(a.title)}</news:title>
+      <news:keywords>${escapeHtml(newsKeywords)}</news:keywords>
     </news:news>
   </url>`;
   }).join('');
@@ -1156,18 +1434,25 @@ ${urls}
 // ========== RSS ==========
 function generateRSS(articles, baseUrl) {
   if (!baseUrl) baseUrl = config.site.url;
-  const items = articles.slice(0, 50).map(a => `
+  const items = articles.slice(0, 50).map(a => {
+    const tags = typeof a.tags === 'string' ? a.tags.split(',').map(t => t.trim()).filter(Boolean) : (a.tags || [a.keyword]);
+    const categories = [...new Set([a.keyword, ...tags])].filter(Boolean).map(t => `      <category>${wrapCdata(t)}</category>`).join('\n');
+    const imageTag = a.image ? `\n      <enclosure url="${escapeHtml(a.image)}" type="image/jpeg" />` : '';
+    return `
     <item>
-      <title><![CDATA[${a.title}]]></title>
+      <title>${wrapCdata(a.title)}</title>
       <link>${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</link>
-      <description><![CDATA[${a.summary || ''}]]></description>
+      <description>${wrapCdata(buildMetaDescription(a.summary, a.content, a.keyword))}</description>
+      <content:encoded>${wrapCdata((a.content || a.summary || '').substring(0, 1200))}</content:encoded>
       <pubDate>${new Date(a.published_at || a.created_at || Date.now()).toUTCString()}</pubDate>
       <guid isPermaLink="true">${baseUrl}/articles/${encodeSlugForUrl(a.slug)}.html</guid>
-      <category><![CDATA[${a.keyword || ''}]]></category>
-    </item>`).join('');
+${categories}${imageTag}
+      <dc:creator>${wrapCdata(config.site.title)}</dc:creator>
+    </item>`;
+  }).join('');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>${config.site.title}</title>
     <link>${baseUrl}</link>
@@ -1175,6 +1460,11 @@ function generateRSS(articles, baseUrl) {
     <language>ko</language>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
     <atom:link href="${baseUrl}/rss.xml" rel="self" type="application/rss+xml"/>
+    <image>
+      <url>${baseUrl}/logo.png</url>
+      <title>${config.site.title}</title>
+      <link>${baseUrl}</link>
+    </image>
     ${items}
   </channel>
 </rss>`;
@@ -1185,12 +1475,19 @@ function generateRobotsTxt(baseUrl) {
   if (!baseUrl) baseUrl = config.site.url;
   return `User-agent: *
 Allow: /
+Allow: /articles/
+Allow: /category/
+Allow: /archive/
 
 Sitemap: ${baseUrl}/sitemap.xml
 Sitemap: ${baseUrl}/news-sitemap.xml
 
 User-agent: Googlebot-News
 Allow: /articles/
+
+User-agent: Yeti
+Allow: /articles/
+Allow: /category/
 `;
 }
 
@@ -1223,20 +1520,16 @@ async function pingSearchEngines(articleUrl) {
 // ========== 퍼블리시 ==========
 function publishArticle(article, trendKeywords, allArticles) {
   try {
-    // 관련 기사 추출: 최근 기사 중 현재 기사 제외
-    let relatedArticles = [];
-    if (allArticles && allArticles.length > 0) {
-      relatedArticles = allArticles
-        .filter(a => a.slug !== article.slug && a.title !== article.title)
-        .slice(0, 5);
-    }
+    // 관련 기사 추출: 키워드/태그 매칭 기반
+    const relatedArticles = getRelatedArticles(article, allArticles || [], 6);
 
     const html = articleTemplate(article, trendKeywords || [], relatedArticles);
-    const filePath = path.join(ARTICLES_DIR, `${article.slug}.html`);
-    fs.writeFileSync(filePath, html, 'utf8');
-    logger.info(`[퍼블리셔] 기사 발행: ${article.slug}.html (관련기사 ${relatedArticles.length}개)`);
+    const safeSlug = normalizeSlug(article.slug);
+    const filePath = path.join(ARTICLES_DIR, `${safeSlug}.html`);
+    writeFileAtomic(filePath, html);
+    logger.info(`[퍼블리셔] 기사 발행: ${article.slug}.html (관련기사 ${relatedArticles.length}개, 카테고리: ${categorizeArticle(article.keyword, article.title, article.tags)})`);
 
-    const articleUrl = `${config.site.url}/articles/${article.slug}.html`;
+    const articleUrl = `${config.site.url}${articlePathFromSlug(article.slug)}`;
     pingSearchEngines(articleUrl).catch(() => {});
 
     return filePath;
@@ -1249,31 +1542,37 @@ function publishArticle(article, trendKeywords, allArticles) {
 function updateIndex(articles, trendKeywords) {
   try {
     const html = indexTemplate(articles, trendKeywords || []);
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'index.html'), html, 'utf8');
+    writeFileAtomic(path.join(OUTPUT_DIR, 'index.html'), html);
 
     // 사이트맵 분할: 기사 5,000 초과 시 자동으로 사이트맵 인덱스 사용
     const sitemapIndex = generateSitemapIndex(articles);
     if (sitemapIndex) {
       // 분할된 사이트맵
-      fs.writeFileSync(path.join(OUTPUT_DIR, 'sitemap.xml'), sitemapIndex, 'utf8');
+      writeFileAtomic(path.join(OUTPUT_DIR, 'sitemap.xml'), sitemapIndex);
       const totalPages = Math.ceil(articles.length / SITEMAP_MAX_URLS);
       for (let i = 1; i <= totalPages; i++) {
-        fs.writeFileSync(path.join(SITEMAP_DIR, `sitemap-${i}.xml`), generateSitemapPage(articles, i), 'utf8');
+        writeFileAtomic(path.join(SITEMAP_DIR, `sitemap-${i}.xml`), generateSitemapPage(articles, i));
       }
+      cleanupSplitSitemaps(totalPages);
       logger.info(`[SEO] 사이트맵 ${totalPages}개 파일로 분할 완료`);
     } else {
       // 단일 사이트맵
-      fs.writeFileSync(path.join(OUTPUT_DIR, 'sitemap.xml'), generateSitemap(articles), 'utf8');
+      writeFileAtomic(path.join(OUTPUT_DIR, 'sitemap.xml'), generateSitemap(articles));
+      cleanupSplitSitemaps(0);
     }
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'news-sitemap.xml'), generateNewsSitemap(articles), 'utf8');
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'rss.xml'), generateRSS(articles), 'utf8');
-    fs.writeFileSync(path.join(OUTPUT_DIR, 'robots.txt'), generateRobotsTxt(), 'utf8');
+    writeFileAtomic(path.join(OUTPUT_DIR, 'news-sitemap.xml'), generateNewsSitemap(articles));
+    writeFileAtomic(path.join(OUTPUT_DIR, 'rss.xml'), generateRSS(articles));
+    writeFileAtomic(path.join(OUTPUT_DIR, 'robots.txt'), generateRobotsTxt());
     const indexNowKey = config.site.url.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32) + 'key';
-    fs.writeFileSync(path.join(OUTPUT_DIR, `${indexNowKey}.txt`), indexNowKey, 'utf8');
+    writeFileAtomic(path.join(OUTPUT_DIR, `${indexNowKey}.txt`), indexNowKey);
 
     if (!fs.existsSync(path.join(OUTPUT_DIR, 'ads.txt'))) {
-      fs.writeFileSync(path.join(OUTPUT_DIR, 'ads.txt'), '# Google AdSense\n# google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0\n', 'utf8');
+      writeFileAtomic(path.join(OUTPUT_DIR, 'ads.txt'), '# Google AdSense\n# google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0\n');
     }
+
+    // 카테고리 페이지 자동 생성
+    generateCategoryPages(articles, trendKeywords || []);
+    generateArchivePage(articles, trendKeywords || []);
 
     logger.info(`[퍼블리셔] 전체 갱신 완료 (${articles.length}개 기사)`);
   } catch (error) {
@@ -1281,8 +1580,203 @@ function updateIndex(articles, trendKeywords) {
   }
 }
 
+function generateArchivePage(articles, trendKeywords) {
+  const ARCHIVE_DIR = path.join(OUTPUT_DIR, 'archive');
+  if (!fs.existsSync(ARCHIVE_DIR)) fs.mkdirSync(ARCHIVE_DIR, { recursive: true });
+
+  const articleCards = articles.slice(0, 300).map(article => `
+    <a class="article-item" href="${articlePathFromSlug(article.slug)}">
+      ${article.image
+        ? `<img class="article-thumb" src="${escapeHtml(article.image)}" alt="${escapeHtml(article.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=\\'article-thumb-empty\\'>${THUMB_SVG}</div>'">`
+        : `<div class="article-thumb-empty">${THUMB_SVG}</div>`}
+      <div class="article-info">
+        <div class="article-kw">${escapeHtml(article.keyword || '')}</div>
+        <h2 class="article-title">${escapeHtml(article.title)}</h2>
+        <p class="article-desc">${escapeHtml(buildMetaDescription(article.summary, article.content, article.keyword)).substring(0, 100)}</p>
+        <div class="article-time">${timeAgo(article.published_at || article.created_at)}</div>
+      </div>
+    </a>`).join('\n');
+
+  const archiveHtml = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>전체 기사 아카이브 - ${config.site.title}</title>
+  <meta name="description" content="${config.site.title} 전체 기사 아카이브입니다. 최신 기사부터 순차적으로 확인할 수 있습니다.">
+  <meta name="keywords" content="전체기사, 뉴스 아카이브, 최신 뉴스, ${config.site.title}">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <link rel="canonical" href="${config.site.url}/archive">
+  <link rel="alternate" type="application/rss+xml" title="${config.site.title} RSS" href="${config.site.url}/rss.xml">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="전체 기사 아카이브 - ${config.site.title}">
+  <meta property="og:description" content="최신 기사부터 확인하는 전체 기사 아카이브">
+  <meta property="og:url" content="${config.site.url}/archive">
+  <meta property="og:site_name" content="${config.site.title}">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:image" content="${config.site.url}/logo.png">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="전체 기사 아카이브 - ${config.site.title}">
+  <meta name="twitter:description" content="최신 기사부터 확인하는 전체 기사 아카이브">
+  <meta name="twitter:image" content="${config.site.url}/logo.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "name": "전체 기사 아카이브",
+    "url": "${config.site.url}/archive",
+    "isPartOf": { "@type": "WebSite", "name": "${escapeJson(config.site.title)}", "url": "${config.site.url}" },
+    "numberOfItems": ${articles.length}
+  }
+  </script>
+
+  ${commonHeadMeta('/archive')}
+  ${COMMON_CSS}
+</head>
+<body>
+  ${headerHTML()}
+  ${trendTickerHTML(trendKeywords)}
+
+  <div class="container">
+    <nav class="breadcrumb" aria-label="브레드크럼">
+      <a href="/">홈</a><span class="sep">›</span><span>전체기사</span>
+    </nav>
+
+    <main>
+      <div class="section-title"><span class="bar"></span> 전체 기사 <small style="color:var(--text-muted);font-weight:400;">(${articles.length}건)</small></div>
+      <div class="article-list">
+        ${articleCards || '<p style="text-align:center;color:var(--text-muted);padding:36px 0;">기사를 준비하고 있습니다.</p>'}
+      </div>
+    </main>
+  </div>
+
+  ${footerHTML()}
+</body>
+</html>`;
+
+  writeFileAtomic(path.join(ARCHIVE_DIR, 'index.html'), archiveHtml);
+}
+
+// ========== 카테고리 페이지 생성 ==========
+function generateCategoryPages(articles, trendKeywords) {
+  const CATEGORY_DIR = path.join(OUTPUT_DIR, 'category');
+  if (!fs.existsSync(CATEGORY_DIR)) fs.mkdirSync(CATEGORY_DIR, { recursive: true });
+
+  // 카테고리별 기사 분류
+  const categoryArticles = {};
+  articles.forEach(a => {
+    const cat = categorizeArticle(a.keyword, a.title, a.tags);
+    if (!categoryArticles[cat]) categoryArticles[cat] = [];
+    categoryArticles[cat].push(a);
+  });
+
+  for (const [category, catArticles] of Object.entries(categoryArticles)) {
+    const catDir = path.join(CATEGORY_DIR, category);
+    if (!fs.existsSync(catDir)) fs.mkdirSync(catDir, { recursive: true });
+    const categoryLabel = categorySeoLabel(category);
+    const categoryMetaDesc = category === '뉴스'
+      ? '최신 기사와 실시간 트렌드'
+      : `${category} 최신 기사와 실시간 트렌드`;
+
+    const articleCards = catArticles.slice(0, 50).map(article => `
+    <a class="article-item" href="${articlePathFromSlug(article.slug)}">
+      ${article.image
+        ? `<img class="article-thumb" src="${escapeHtml(article.image)}" alt="${escapeHtml(article.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=\\'article-thumb-empty\\'>${THUMB_SVG}</div>'">`
+        : `<div class="article-thumb-empty">${THUMB_SVG}</div>`}
+      <div class="article-info">
+        <div class="article-kw">${escapeHtml(article.keyword || '')}</div>
+        <h2 class="article-title">${escapeHtml(article.title)}</h2>
+        <p class="article-desc">${escapeHtml(article.summary || '').substring(0, 80)}</p>
+        <div class="article-time">${timeAgo(article.published_at || article.created_at)}</div>
+      </div>
+    </a>`).join('\n');
+
+    const catPageHtml = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${categoryLabel} - ${config.site.title}</title>
+  <meta name="description" content="${categoryLabel}를 빠르게 확인하세요. ${config.site.title}에서 최신 기사와 핵심 이슈를 제공합니다.">
+  <meta name="keywords" content="${category}, ${categoryLabel}, ${category} 최신, 실시간 뉴스">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <link rel="canonical" href="${config.site.url}${categoryPath(category)}">
+  <link rel="alternate" type="application/rss+xml" title="${config.site.title} RSS" href="${config.site.url}/rss.xml">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="${categoryLabel} - ${config.site.title}">
+  <meta property="og:description" content="${categoryMetaDesc}">
+  <meta property="og:url" content="${config.site.url}${categoryPath(category)}">
+  <meta property="og:site_name" content="${config.site.title}">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:image" content="${config.site.url}/logo.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="${categoryLabel} - ${config.site.title}">
+  <meta name="twitter:description" content="${categoryMetaDesc}">
+  <meta name="twitter:image" content="${config.site.url}/logo.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "name": "${escapeJson(categoryLabel)}",
+    "description": "${escapeJson(categoryMetaDesc)}",
+    "url": "${config.site.url}${categoryPath(category)}",
+    "isPartOf": { "@type": "WebSite", "name": "${escapeJson(config.site.title)}", "url": "${config.site.url}" },
+    "numberOfItems": ${catArticles.length}
+  }
+  </script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "홈", "item": "${config.site.url}/" },
+      { "@type": "ListItem", "position": 2, "name": "${escapeJson(category)}", "item": "${config.site.url}${categoryPath(category)}" }
+    ]
+  }
+  </script>
+
+  ${commonHeadMeta(categoryPath(category))}
+  ${COMMON_CSS}
+</head>
+<body>
+  ${headerHTML()}
+  ${trendTickerHTML(trendKeywords)}
+
+  <div class="container">
+    <nav class="breadcrumb" aria-label="브레드크럼">
+      <a href="/">홈</a><span class="sep">›</span><span>${escapeHtml(category)}</span>
+    </nav>
+
+    <main>
+      <div class="section-title"><span class="bar"></span> ${escapeHtml(categoryLabel)} <small style="color:var(--text-muted);font-weight:400;">(${catArticles.length}건)</small></div>
+      <div class="article-list">
+        ${articleCards || '<p style="text-align:center;color:var(--text-muted);padding:36px 0;">기사를 준비하고 있습니다.</p>'}
+      </div>
+    </main>
+  </div>
+
+  ${footerHTML()}
+</body>
+</html>`;
+
+    writeFileAtomic(path.join(catDir, 'index.html'), catPageHtml);
+  }
+  logger.info(`[SEO] 카테고리 페이지 ${Object.keys(categoryArticles).length}개 생성 완료`);
+}
+
 module.exports = {
   publishArticle, updateIndex, generateSitemap, generateSitemapIndex, generateSitemapPage,
   generateNewsSitemap, generateRSS, generateRobotsTxt, articleTemplate, indexTemplate,
-  pingSearchEngines, OUTPUT_DIR, ARTICLES_DIR, SITEMAP_DIR,
+  pingSearchEngines, categorizeArticle, getRelatedArticles, generateCategoryPages, generateArchivePage,
+  articlePathFromSlug,
+  OUTPUT_DIR, ARTICLES_DIR, SITEMAP_DIR,
 };

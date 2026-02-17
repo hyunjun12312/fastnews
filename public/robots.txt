@@ -1,8 +1,15 @@
 User-agent: *
 Allow: /
+Allow: /articles/
+Allow: /category/
+Allow: /archive/
 
 Sitemap: https://www.wordmoa.com/sitemap.xml
 Sitemap: https://www.wordmoa.com/news-sitemap.xml
 
 User-agent: Googlebot-News
 Allow: /articles/
+
+User-agent: Yeti
+Allow: /articles/
+Allow: /category/

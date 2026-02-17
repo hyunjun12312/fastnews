@@ -86,8 +86,8 @@ async function runPipeline() {
       if (/['\"''""」]/.test(kw.keyword)) continue;
       if (/(?:까지|에서|으로|에게|부터|라는|라고|하는|되는|있는|없는)$/.test(kw.keyword)) continue;
 
-      // 최근 40분 내에 이미 있는 키워드는 스킵 (실검은 빠르게 변함)
-      if (!db.isKeywordRecent(kw.keyword, 40)) {
+      // 최근 60분 내에 이미 있는 키워드는 스킵 (중복 방지, 단 1시간 후 새 뉴스 반영 가능)
+      if (!db.isKeywordRecent(kw.keyword, 60)) {
         const result = db.insertKeyword(kw.keyword, kw.source, kw.rank);
         if (result.changes > 0) {
           newKeywordsCount++;
@@ -105,13 +105,14 @@ async function runPipeline() {
       logger.info('[STEP 1] 새로운 키워드 없음. 기존 트렌드 키워드 중 기사 없는 것 확인...');
       
       // 현재 트렌딩 중인 키워드 중 최근 기사가 없는 것이 있으면 재처리 대상으로 전환
+      // 단, 12시간 내 기사가 이미 있으면 재처리하지 않음 (중복 방지)
       let reprocessCount = 0;
       for (const kw of keywords) {
-        if (!db.hasArticleForKeyword(kw.keyword)) {
-          // 이 키워드는 현재 트렌딩이지만 최근 기사가 없음 → 재삽입
+        if (!db.hasSimilarRecentArticle(kw.keyword, 4)) {
+          // 이 키워드는 현재 트렌딩이지만 최근 4시간 내 기사가 없음 → 재삽입
           db.resetKeywordForReprocessing(kw.keyword);
           reprocessCount++;
-          logger.info(`[재처리] "${kw.keyword}" - 최근 기사 없음, 재처리 대상`);
+          logger.info(`[재처리] "${kw.keyword}" - 최근 4시간 내 기사 없음, 재처리 대상`);
         }
       }
       
@@ -151,9 +152,9 @@ async function runPipeline() {
         break;
       }
 
-      // 이미 해당 키워드로 기사가 있으면 스킵
-      if (db.hasArticleForKeyword(kw.keyword)) {
-        logger.info(`[STEP 2] "${kw.keyword}" - 이미 기사 존재, 스킵`);
+      // 이미 해당 키워드로 최근 3시간 내 기사가 있으면 스킵 (중복 방지)
+      if (db.hasArticleForKeyword(kw.keyword, 3)) {
+        logger.info(`[STEP 2] "${kw.keyword}" - 최근 3시간 내 기사 존재, 스킵`);
         db.markKeywordProcessed(kw.id);
         continue;
       }

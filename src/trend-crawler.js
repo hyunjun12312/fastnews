@@ -316,17 +316,22 @@ async function crawlNaverMobile() {
   try {
     logger.info('[크롤러] 네이버 모바일 인기검색어 크롤링 시작...');
     const keywords = [];
+    const seen = new Set();
 
-    // 네이버 모바일 메인 페이지에서 인기 검색어 추출
+    // 방법 1: 네이버 모바일 검색 (실시간 검색어)
     const urls = [
       'https://m.search.naver.com/search.naver?query=%EC%8B%A4%EC%8B%9C%EA%B0%84+%EA%B2%80%EC%83%89%EC%96%B4',
-      'https://datalab.naver.com/keyword/realtimeList.naver?age=0',
+      'https://m.search.naver.com/search.naver?query=%EC%8B%A4%EC%8B%9C%EA%B0%84+%EC%9D%B8%EA%B8%B0+%EA%B2%80%EC%83%89%EC%96%B4',
     ];
 
     for (const url of urls) {
       try {
         const res = await axios.get(url, {
-          headers: { ...HEADERS, 'Accept': 'text/html' },
+          headers: { 
+            ...HEADERS, 
+            'Accept': 'text/html',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+          },
           timeout: 8000,
         });
         const $ = cheerio.load(res.data);
@@ -337,19 +342,25 @@ async function crawlNaverMobile() {
           '.rank_area .keyword', '.list_trend_keyword .keyword',
           '.realtime_kwd_lst li a', '.kwd_lst li a',
           'a.keyword', '.keyword_box a', '.trend_item',
+          // 신규 셀렉터
+          '.tit_area .tit', '.api_subject_bx .tit',
+          '.fds-comps-keyword-chip', '.fds-keyword-text',
+          'a[data-cr-area="rkw"]', 'a[data-cr-area="rkt"]',
+          '.type_keyword .keyword', '.keyword_list .keyword',
         ];
         
         for (const sel of selectors) {
           $(sel).each((i, el) => {
-            const text = $(el).text().trim().replace(/^\d+\s*/, '');
-            if (text && text.length >= 2 && text.length <= 20) {
-              keywords.push({ keyword: text, source: 'naver', rank: i + 1 });
+            let text = $(el).text().trim().replace(/^\d+[\.\s]*/, '').trim();
+            if (text && text.length >= 2 && text.length <= 20 && !seen.has(text)) {
+              seen.add(text);
+              keywords.push({ keyword: text, source: 'naver', rank: keywords.length + 1 });
             }
           });
-          if (keywords.length >= 5) break;
+          if (keywords.length >= 10) break;
         }
 
-        if (keywords.length >= 5) break;
+        if (keywords.length >= 10) break;
       } catch (e) {
         logger.debug(`[크롤러] 네이버 URL 실패: ${e.message}`);
       }
@@ -361,6 +372,195 @@ async function crawlNaverMobile() {
     logger.error(`[크롤러] 네이버 모바일 크롤링 실패: ${error.message}`);
     return [];
   }
+}
+
+// ========== 네이버 DataLab 실시간 검색어 ==========
+async function crawlNaverDataLab() {
+  try {
+    logger.info('[크롤러] 네이버 DataLab 실시간 검색어 크롤링 시작...');
+    const keywords = [];
+    const seen = new Set();
+
+    // DataLab 실시간 검색어 페이지
+    const urls = [
+      'https://datalab.naver.com/keyword/realtimeList.naver?age=0',
+      'https://datalab.naver.com/keyword/realtimeList.naver?age=20',
+      'https://datalab.naver.com/keyword/realtimeList.naver?age=30',
+    ];
+
+    for (const url of urls) {
+      try {
+        const res = await axios.get(url, {
+          headers: {
+            ...HEADERS,
+            'Referer': 'https://datalab.naver.com/',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+          timeout: 10000,
+        });
+        const $ = cheerio.load(res.data);
+
+        // DataLab 실시간 검색어 셀렉터
+        const selectors = [
+          '.ranking_list .item_title',
+          '.realtime_rank .keyword',
+          '.keyword_rank li .title',
+          '.ranking_keyword .keyword',
+          'ol li .title', 'ol li a',
+          '.list_keyword_realtime li a',
+          '.keyword_list li a',
+          'span.title', '.rank_text',
+          '.item_box .item_title',
+        ];
+
+        for (const sel of selectors) {
+          $(sel).each((i, el) => {
+            let text = $(el).text().trim()
+              .replace(/^\d+[\.\s]*/, '')
+              .replace(/\s*(NEW|UP|DOWN|SAME|\d+단계|순위)\s*/gi, '')
+              .trim();
+            if (text && text.length >= 2 && text.length <= 20 && !seen.has(text)) {
+              seen.add(text);
+              keywords.push({ keyword: text, source: 'naver_datalab', rank: keywords.length + 1 });
+            }
+          });
+          if (keywords.length >= 10) break;
+        }
+
+        // JSON 데이터가 페이지에 임베드되어 있는 경우 추출
+        if (keywords.length === 0) {
+          const scriptContent = $('script').toArray()
+            .map(s => $(s).html() || '')
+            .join('\n');
+
+          // JSON 배열에서 키워드 추출 시도
+          const jsonMatches = scriptContent.match(/\["[가-힣a-zA-Z0-9\s]{2,20}"/g) || [];
+          for (const match of jsonMatches.slice(0, 20)) {
+            const kw = match.replace(/[\[\]"]/g, '').trim();
+            if (kw && kw.length >= 2 && kw.length <= 20 && !seen.has(kw)) {
+              seen.add(kw);
+              keywords.push({ keyword: kw, source: 'naver_datalab', rank: keywords.length + 1 });
+            }
+          }
+
+          // rankKeyword 패턴
+          const kwMatches = scriptContent.match(/(?:keyword|title|text)\s*[:=]\s*["']([가-힣a-zA-Z0-9\s]{2,20})["']/g) || [];
+          for (const match of kwMatches.slice(0, 20)) {
+            const kw = match.replace(/.*["']([^"']+)["'].*/, '$1').trim();
+            if (kw && kw.length >= 2 && kw.length <= 20 && !seen.has(kw)) {
+              seen.add(kw);
+              keywords.push({ keyword: kw, source: 'naver_datalab', rank: keywords.length + 1 });
+            }
+          }
+        }
+
+        if (keywords.length >= 15) break;
+      } catch (e) {
+        logger.debug(`[크롤러] DataLab URL 실패: ${e.message}`);
+      }
+    }
+
+    logger.info(`[크롤러] 네이버 DataLab: ${keywords.length}개 키워드 수집`);
+    return keywords;
+  } catch (error) {
+    logger.error(`[크롤러] 네이버 DataLab 크롤링 실패: ${error.message}`);
+    return [];
+  }
+}
+
+// ========== 네이버 뉴스 실시간 핫토픽 (PC 뉴스 섹션) ==========
+async function crawlNaverNewsTopics() {
+  try {
+    logger.info('[크롤러] 네이버 뉴스 실시간 토픽 크롤링 시작...');
+    const keywords = [];
+    const seen = new Set();
+
+    // 네이버 뉴스 홈 - 많이 본 뉴스에서 키워드 추출
+    const urls = [
+      'https://news.naver.com/main/ranking/popularDay.naver',
+      'https://news.naver.com/',
+      'https://m.news.naver.com/',
+    ];
+
+    for (const url of urls) {
+      try {
+        const isMobile = url.includes('m.news');
+        const res = await axios.get(url, {
+          headers: {
+            ...HEADERS,
+            'User-Agent': isMobile 
+              ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
+              : HEADERS['User-Agent'],
+          },
+          timeout: 10000,
+        });
+        const $ = cheerio.load(res.data);
+
+        // 뉴스 랭킹/이슈 키워드 셀렉터
+        const selectors = [
+          // 네이버 뉴스 랭킹/핫토픽
+          '.rankingnews_box .list_title', '.rankingnews_name',
+          '.cjs_t', '.cjs_news_mw .title',
+          '.cluster_head .cluster_text',
+          // 이슈 키워드
+          '.issue_keyword a', '.keyword_headline a',
+          '.ofp_main_keyword li a', '.main_keyword li a',
+          // 모바일
+          '.newsct_article .tit', '.newsnow_tx_inner a',
+          '.rcmdn_keyword a', '.keyword_area a',
+          // 실시간 뉴스
+          '.hdline_article_tit a', '.main_content_headline li a',
+        ];
+
+        for (const sel of selectors) {
+          $(sel).each((i, el) => {
+            let text = $(el).text().trim();
+            // 뉴스 제목에서 핵심 키워드 추출 (2~4단어)
+            text = extractKeywordFromTitle(text);
+            if (text && text.length >= 2 && text.length <= 20 && !seen.has(text)) {
+              seen.add(text);
+              keywords.push({ keyword: text, source: 'naver_news', rank: keywords.length + 1 });
+            }
+          });
+          if (keywords.length >= 15) break;
+        }
+
+        if (keywords.length >= 15) break;
+      } catch (e) {
+        logger.debug(`[크롤러] 네이버 뉴스 URL 실패: ${e.message}`);
+      }
+    }
+
+    logger.info(`[크롤러] 네이버 뉴스 토픽: ${keywords.length}개 키워드 수집`);
+    return keywords;
+  } catch (error) {
+    logger.error(`[크롤러] 네이버 뉴스 토픽 크롤링 실패: ${error.message}`);
+    return [];
+  }
+}
+
+// 뉴스 제목에서 핵심 인물/이슈 키워드 추출
+function extractKeywordFromTitle(title) {
+  if (!title || title.length < 3) return '';
+  
+  // 제목이 너무 길면 (문장형) 핵심만 추출
+  if (title.length > 20) {
+    // "인물명, 어쩌구" → 인물명만 추출
+    const commaMatch = title.match(/^([가-힣a-zA-Z\s]{2,10})[,·…]/);
+    if (commaMatch) return commaMatch[1].trim();
+    
+    // "인물명 + 핵심어" 패턴 (앞 2~3단어)
+    const words = title.split(/[\s,·…"']/).filter(w => w.length >= 2);
+    if (words.length >= 2) {
+      // 인명 + 키워드 조합 (최대 2단어)
+      const candidate = words.slice(0, 2).join(' ');
+      if (candidate.length <= 15) return candidate;
+      return words[0];
+    }
+    return '';
+  }
+  
+  return title.replace(/^\d+[\.\s]*/, '').trim();
 }
 
 // ========== Signal.bz 실시간 검색어 통합 ==========
@@ -482,7 +682,7 @@ function addSignalKeyword(keywords, seen, text, rank) {
 // ========== 모든 소스 크롤링 ==========
 async function crawlAll() {
   logger.info('====== 전체 실시간 검색어 크롤링 시작 ======');
-  logger.info('소스: Google Trends (일반+엔터), Zum, Nate, Signal.bz, Naver');
+  logger.info('소스: Google Trends (일반+엔터), Zum, Nate, Signal.bz, Naver (모바일+DataLab+뉴스토픽)');
 
   const results = await Promise.allSettled([
     crawlGoogleTrends(),
@@ -491,10 +691,12 @@ async function crawlAll() {
     crawlNate(),
     crawlSignalBz(),
     crawlNaverMobile(),
+    crawlNaverDataLab(),
+    crawlNaverNewsTopics(),
   ]);
 
   const allKeywords = [];
-  const sources = ['Google Trends', 'Google Trends 엔터', 'Zum', 'Nate', 'Signal.bz', 'Naver'];
+  const sources = ['Google Trends', 'Google Trends 엔터', 'Zum', 'Nate', 'Signal.bz', 'Naver 모바일', 'Naver DataLab', 'Naver 뉴스토픽'];
 
   results.forEach((result, index) => {
     if (result.status === 'fulfilled' && Array.isArray(result.value)) {
@@ -553,6 +755,8 @@ module.exports = {
   crawlNate,
   crawlSignalBz,
   crawlNaverMobile,
+  crawlNaverDataLab,
+  crawlNaverNewsTopics,
   crawlAll,
   isGoodKeyword,
 };

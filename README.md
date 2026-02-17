@@ -114,6 +114,28 @@ korean-trend-autopublisher/
 - 시스템 로그 실시간 확인
 - 통계 자동 갱신 (30초)
 
+## 🔧 SEO 산출물 재생성
+
+운영 중 정적 SEO 파일(메인/카테고리/아카이브/사이트맵/RSS/robots)만 다시 만들고 싶다면 아래 명령을 사용하세요.
+
+```bash
+npm run build:seo
+```
+
+이 명령은 발행된 기사 DB를 기준으로 `public/` 산출물을 재생성하고, 정상 완료 시 종료코드 `0`으로 끝납니다.
+
+배포 직전 자동 검증까지 포함하려면:
+
+```bash
+npm run release:seo
+```
+
+검증만 отдельно 실행하려면:
+
+```bash
+npm run verify:seo
+```
+
 ## ⚙️ 주요 설정
 
 | 설정 | 기본값 | 설명 |

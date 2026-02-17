@@ -196,10 +196,20 @@ function getTodayArticleCount() {
   return (queryOne(`SELECT COUNT(*) as count FROM articles WHERE created_at >= datetime('now', 'start of day', 'localtime')`) || {}).count || 0;
 }
 
-function hasArticleForKeyword(keyword) {
-  // 최근 1시간 내에 같은 키워드로 기사가 있으면 중복 (시간 지나면 재생성 가능)
+function hasArticleForKeyword(keyword, hours = 3) {
+  // 최근 N시간 내에 같은 키워드로 기사가 있으면 중복 방지 (기본 3시간)
   const row = queryOne(
-    `SELECT COUNT(*) as cnt FROM articles WHERE keyword = ? AND created_at >= datetime('now', '-1 hours', 'localtime')`,
+    `SELECT COUNT(*) as cnt FROM articles WHERE keyword = ? AND created_at >= datetime('now', '-${hours} hours', 'localtime')`,
+    [keyword]
+  );
+  return row && row.cnt > 0;
+}
+
+// 최근 기사 제목과 유사한지 확인 (같은 키워드 다른 제목이어도 중복 방지)
+function hasSimilarRecentArticle(keyword, hours = 4) {
+  // 키워드가 포함된 기사가 최근 N시간 내에 존재하면 중복으로 판단
+  const row = queryOne(
+    `SELECT COUNT(*) as cnt FROM articles WHERE keyword = ? AND created_at >= datetime('now', '-${hours} hours', 'localtime')`,
     [keyword]
   );
   return row && row.cnt > 0;
@@ -354,7 +364,7 @@ module.exports = {
   getRecentKeywords, isKeywordRecent, resetKeywordForReprocessing,
   insertArticle, getArticles, getArticleBySlug,
   getArticleById, incrementViews, getArticleCount, getTodayArticleCount,
-  hasArticleForKeyword, updateArticleImage, getArticlesWithoutImage,
+  hasArticleForKeyword, hasSimilarRecentArticle, updateArticleImage, getArticlesWithoutImage,
   getLowQualityArticles, updateArticle, updateArticleKeyword, deleteArticle,
   deleteArticlesWithLongKeywords, deleteArticlesWithGarbageKeywords, deleteGarbageKeywords,
   logCrawl, getStats, saveToDisk,

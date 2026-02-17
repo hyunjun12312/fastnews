@@ -7,7 +7,10 @@
     "start": "node src/main.js",
     "dashboard": "node src/dashboard.js",
     "dev": "node src/main.js --dev",
-    "test": "node src/test.js"
+    "test": "node src/test.js",
+    "build:seo": "node src/rebuild-seo.js",
+    "verify:seo": "node src/seo-healthcheck.js",
+    "release:seo": "npm run build:seo && npm run verify:seo"
   },
   "dependencies": {
     "axios": "^1.6.0",
