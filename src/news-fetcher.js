@@ -7,6 +7,7 @@
 
 const axios = require('axios');
 const cheerio = require('cheerio');
+const iconv = require('iconv-lite');
 const config = require('./config');
 const logger = require('./logger');
 
@@ -14,6 +15,33 @@ const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept-Language': 'ko-KR,ko;q=0.9',
 };
+
+function detectCharset(contentType = '', htmlPreview = '') {
+  const fromHeader = String(contentType).match(/charset\s*=\s*([^;\s]+)/i)?.[1];
+  const fromMeta = String(htmlPreview).match(/<meta[^>]+charset\s*=\s*["']?([^"'\s/>]+)/i)?.[1]
+    || String(htmlPreview).match(/<meta[^>]+content\s*=\s*["'][^"']*charset=([^"'\s;>]+)/i)?.[1];
+
+  const raw = (fromHeader || fromMeta || 'utf-8').trim().toLowerCase();
+
+  if (raw === 'euc-kr' || raw === 'ks_c_5601-1987' || raw === 'x-windows-949') return 'cp949';
+  if (raw === 'utf8') return 'utf-8';
+  return raw;
+}
+
+function decodeHtmlResponse(response) {
+  const data = response?.data;
+  if (!Buffer.isBuffer(data)) return typeof data === 'string' ? data : String(data || '');
+
+  const contentType = response?.headers?.['content-type'] || '';
+  const preview = data.toString('ascii', 0, Math.min(data.length, 4096));
+  const charset = detectCharset(contentType, preview);
+
+  try {
+    return iconv.decode(data, charset);
+  } catch (_) {
+    return data.toString('utf8');
+  }
+}
 
 // ========== 네이버 뉴스 검색 API ==========
 async function fetchNaverNews(keyword, count = 5) {
@@ -166,9 +194,11 @@ async function fetchNaverSearchNews(keyword, count = 5) {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
       },
       timeout: 10000,
+      responseType: 'arraybuffer',
     });
 
-    const $ = cheerio.load(response.data);
+    const html = decodeHtmlResponse(response);
+    const $ = cheerio.load(html);
     const articles = [];
 
     // 뉴스 검색 결과 파싱
@@ -278,9 +308,11 @@ async function fetchArticleContent(url) {
       headers: HEADERS,
       timeout: 15000,
       maxRedirects: 5,
+      responseType: 'arraybuffer',
     });
 
-    const $ = cheerio.load(response.data);
+    const html = decodeHtmlResponse(response);
+    const $ = cheerio.load(html);
 
     // 이미지 추출
     const image = extractImage($, url);

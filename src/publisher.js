@@ -56,6 +56,38 @@ function writeFileAtomic(filePath, content) {
   fs.renameSync(tempPath, filePath);
 }
 
+function hasMojibakeText(value) {
+  const text = String(value || '');
+  if (!text) return false;
+
+  if (text.includes('\uFFFD')) return true;
+
+  const latinExtendedCount = (text.match(/[\u00C0-\u024F]/g) || []).length;
+  const hangulCount = (text.match(/[가-힣]/g) || []).length;
+
+  if (latinExtendedCount >= 4 && hangulCount < Math.max(2, Math.floor(latinExtendedCount / 2))) {
+    return true;
+  }
+
+  return false;
+}
+
+function isCorruptedArticle(article) {
+  if (!article) return true;
+  const sample = [article.keyword, article.title, article.summary, article.content].join(' ');
+  return hasMojibakeText(sample);
+}
+
+function sanitizeArticles(articles) {
+  const source = Array.isArray(articles) ? articles : [];
+  const filtered = source.filter(article => !isCorruptedArticle(article));
+  const skipped = source.length - filtered.length;
+  if (skipped > 0) {
+    logger.warn(`[퍼블리셔] 깨진 텍스트 기사 ${skipped}개 제외`);
+  }
+  return filtered;
+}
+
 function cleanupSplitSitemaps(keepPages = 0) {
   if (!fs.existsSync(SITEMAP_DIR)) return;
   const files = fs.readdirSync(SITEMAP_DIR);
@@ -1520,8 +1552,13 @@ async function pingSearchEngines(articleUrl) {
 // ========== 퍼블리시 ==========
 function publishArticle(article, trendKeywords, allArticles) {
   try {
+    if (isCorruptedArticle(article)) {
+      logger.warn(`[퍼블리셔] 깨진 텍스트 감지로 발행 제외: ${article?.slug || 'unknown'}`);
+      return null;
+    }
+
     // 관련 기사 추출: 키워드/태그 매칭 기반
-    const relatedArticles = getRelatedArticles(article, allArticles || [], 6);
+    const relatedArticles = getRelatedArticles(article, sanitizeArticles(allArticles || []), 6);
 
     const html = articleTemplate(article, trendKeywords || [], relatedArticles);
     const safeSlug = normalizeSlug(article.slug);
@@ -1541,27 +1578,28 @@ function publishArticle(article, trendKeywords, allArticles) {
 
 function updateIndex(articles, trendKeywords) {
   try {
-    const html = indexTemplate(articles, trendKeywords || []);
+    const safeArticles = sanitizeArticles(articles);
+    const html = indexTemplate(safeArticles, trendKeywords || []);
     writeFileAtomic(path.join(OUTPUT_DIR, 'index.html'), html);
 
     // 사이트맵 분할: 기사 5,000 초과 시 자동으로 사이트맵 인덱스 사용
-    const sitemapIndex = generateSitemapIndex(articles);
+    const sitemapIndex = generateSitemapIndex(safeArticles);
     if (sitemapIndex) {
       // 분할된 사이트맵
       writeFileAtomic(path.join(OUTPUT_DIR, 'sitemap.xml'), sitemapIndex);
-      const totalPages = Math.ceil(articles.length / SITEMAP_MAX_URLS);
+      const totalPages = Math.ceil(safeArticles.length / SITEMAP_MAX_URLS);
       for (let i = 1; i <= totalPages; i++) {
-        writeFileAtomic(path.join(SITEMAP_DIR, `sitemap-${i}.xml`), generateSitemapPage(articles, i));
+        writeFileAtomic(path.join(SITEMAP_DIR, `sitemap-${i}.xml`), generateSitemapPage(safeArticles, i));
       }
       cleanupSplitSitemaps(totalPages);
       logger.info(`[SEO] 사이트맵 ${totalPages}개 파일로 분할 완료`);
     } else {
       // 단일 사이트맵
-      writeFileAtomic(path.join(OUTPUT_DIR, 'sitemap.xml'), generateSitemap(articles));
+      writeFileAtomic(path.join(OUTPUT_DIR, 'sitemap.xml'), generateSitemap(safeArticles));
       cleanupSplitSitemaps(0);
     }
-    writeFileAtomic(path.join(OUTPUT_DIR, 'news-sitemap.xml'), generateNewsSitemap(articles));
-    writeFileAtomic(path.join(OUTPUT_DIR, 'rss.xml'), generateRSS(articles));
+    writeFileAtomic(path.join(OUTPUT_DIR, 'news-sitemap.xml'), generateNewsSitemap(safeArticles));
+    writeFileAtomic(path.join(OUTPUT_DIR, 'rss.xml'), generateRSS(safeArticles));
     writeFileAtomic(path.join(OUTPUT_DIR, 'robots.txt'), generateRobotsTxt());
     const indexNowKey = config.site.url.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32) + 'key';
     writeFileAtomic(path.join(OUTPUT_DIR, `${indexNowKey}.txt`), indexNowKey);
@@ -1571,10 +1609,10 @@ function updateIndex(articles, trendKeywords) {
     }
 
     // 카테고리 페이지 자동 생성
-    generateCategoryPages(articles, trendKeywords || []);
-    generateArchivePage(articles, trendKeywords || []);
+    generateCategoryPages(safeArticles, trendKeywords || []);
+    generateArchivePage(safeArticles, trendKeywords || []);
 
-    logger.info(`[퍼블리셔] 전체 갱신 완료 (${articles.length}개 기사)`);
+    logger.info(`[퍼블리셔] 전체 갱신 완료 (${safeArticles.length}개 기사)`);
   } catch (error) {
     logger.error(`[퍼블리셔] 인덱스 갱신 실패: ${error.message}`);
   }
@@ -1777,6 +1815,6 @@ module.exports = {
   publishArticle, updateIndex, generateSitemap, generateSitemapIndex, generateSitemapPage,
   generateNewsSitemap, generateRSS, generateRobotsTxt, articleTemplate, indexTemplate,
   pingSearchEngines, categorizeArticle, getRelatedArticles, generateCategoryPages, generateArchivePage,
-  articlePathFromSlug,
+  articlePathFromSlug, isCorruptedArticle,
   OUTPUT_DIR, ARTICLES_DIR, SITEMAP_DIR,
 };
