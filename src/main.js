@@ -152,6 +152,13 @@ async function runPipeline() {
         break;
       }
 
+      // 깨진/저품질 키워드 즉시 스킵 (뉴스수집/AI 비용 절감)
+      if (!crawler.isGoodKeyword(kw.keyword) || crawler.hasMojibakeText(kw.keyword)) {
+        logger.warn(`[STEP 2] 깨진 키워드 스킵: "${kw.keyword}"`);
+        db.markKeywordProcessed(kw.id);
+        continue;
+      }
+
       // 이미 해당 키워드로 최근 3시간 내 기사가 있으면 스킵 (중복 방지)
       if (db.hasArticleForKeyword(kw.keyword, 3)) {
         logger.info(`[STEP 2] "${kw.keyword}" - 최근 3시간 내 기사 존재, 스킵`);

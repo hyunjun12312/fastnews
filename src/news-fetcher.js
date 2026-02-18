@@ -16,6 +16,8 @@ const HEADERS = {
   'Accept-Language': 'ko-KR,ko;q=0.9',
 };
 
+let naverApiDisabled = false;
+
 function detectCharset(contentType = '', htmlPreview = '') {
   const fromHeader = String(contentType).match(/charset\s*=\s*([^;\s]+)/i)?.[1];
   const fromMeta = String(htmlPreview).match(/<meta[^>]+charset\s*=\s*["']?([^"'\s/>]+)/i)?.[1]
@@ -46,6 +48,8 @@ function decodeHtmlResponse(response) {
 // ========== 네이버 뉴스 검색 API ==========
 async function fetchNaverNews(keyword, count = 5) {
   try {
+    if (naverApiDisabled) return [];
+
     if (!config.naver.clientId || !config.naver.clientSecret) {
       logger.debug('[뉴스] 네이버 API 키 미설정, 스킵');
       return [];
@@ -75,6 +79,11 @@ async function fetchNaverNews(keyword, count = 5) {
     logger.info(`[뉴스] 네이버 "${keyword}": ${articles.length}개 기사 수집`);
     return articles;
   } catch (error) {
+    if (error?.response?.status === 401) {
+      naverApiDisabled = true;
+      logger.warn('[뉴스] 네이버 API 인증 실패(401)로 이번 실행에서 네이버 API 수집을 비활성화합니다. 환경변수 NAVER_CLIENT_ID/NAVER_CLIENT_SECRET 확인 필요');
+      return [];
+    }
     logger.error(`[뉴스] 네이버 뉴스 검색 실패 [${keyword}]: ${error.message}`);
     return [];
   }

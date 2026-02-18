@@ -15,6 +15,7 @@
 
 const axios = require('axios');
 const cheerio = require('cheerio');
+const iconv = require('iconv-lite');
 const logger = require('./logger');
 const config = require('./config');
 
@@ -23,6 +24,46 @@ const HEADERS = {
   'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
+
+function detectCharset(contentType = '', htmlPreview = '') {
+  const fromHeader = String(contentType).match(/charset\s*=\s*([^;\s]+)/i)?.[1];
+  const fromMeta = String(htmlPreview).match(/<meta[^>]+charset\s*=\s*["']?([^"'\s/>]+)/i)?.[1]
+    || String(htmlPreview).match(/<meta[^>]+content\s*=\s*["'][^"']*charset=([^"'\s;>]+)/i)?.[1];
+
+  const raw = (fromHeader || fromMeta || 'utf-8').trim().toLowerCase();
+  if (raw === 'euc-kr' || raw === 'ks_c_5601-1987' || raw === 'x-windows-949') return 'cp949';
+  if (raw === 'utf8') return 'utf-8';
+  return raw;
+}
+
+function decodeHtmlResponse(response) {
+  const data = response?.data;
+  if (!Buffer.isBuffer(data)) return typeof data === 'string' ? data : String(data || '');
+
+  const contentType = response?.headers?.['content-type'] || '';
+  const preview = data.toString('ascii', 0, Math.min(data.length, 4096));
+  const charset = detectCharset(contentType, preview);
+
+  try {
+    return iconv.decode(data, charset);
+  } catch (_) {
+    return data.toString('utf8');
+  }
+}
+
+function hasMojibakeText(value) {
+  const text = String(value || '');
+  if (!text) return false;
+  if (text.includes('\uFFFD')) return true;
+
+  const latinExtendedCount = (text.match(/[\u00C0-\u024F]/g) || []).length;
+  const hangulCount = (text.match(/[가-힣]/g) || []).length;
+  if (latinExtendedCount >= 3 && hangulCount < Math.max(2, Math.floor(latinExtendedCount / 2))) {
+    return true;
+  }
+
+  return /[�]{2,}/.test(text);
+}
 
 // ========== 키워드 품질 필터 ==========
 const KEYWORD_STOPWORDS = new Set([
@@ -86,6 +127,7 @@ const KEYWORD_STOPWORDS = new Set([
 function isGoodKeyword(keyword) {
   if (!keyword || keyword.length < 2) return false;
   if (keyword.length > 25) return false;
+  if (hasMojibakeText(keyword)) return false;
 
   const words = keyword.split(/\s+/);
 
@@ -214,9 +256,11 @@ async function crawlZum() {
     const response = await axios.get(url, {
       headers: HEADERS,
       timeout: 15000,
+      responseType: 'arraybuffer',
     });
 
-    const $ = cheerio.load(response.data);
+    const html = decodeHtmlResponse(response);
+    const $ = cheerio.load(html);
     const keywords = [];
 
     const selectors = [
@@ -259,9 +303,11 @@ async function crawlNate() {
     const response = await axios.get(url, {
       headers: HEADERS,
       timeout: 15000,
+      responseType: 'arraybuffer',
     });
 
-    const $ = cheerio.load(response.data);
+    const html = decodeHtmlResponse(response);
+    const $ = cheerio.load(html);
     const keywords = [];
     const seen = new Set();
 
@@ -333,8 +379,10 @@ async function crawlNaverMobile() {
             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
           },
           timeout: 8000,
+          responseType: 'arraybuffer',
         });
-        const $ = cheerio.load(res.data);
+        const html = decodeHtmlResponse(res);
+        const $ = cheerio.load(html);
 
         // 다양한 셀렉터로 키워드 추출 시도
         const selectors = [
@@ -397,8 +445,10 @@ async function crawlNaverDataLab() {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           },
           timeout: 10000,
+          responseType: 'arraybuffer',
         });
-        const $ = cheerio.load(res.data);
+        const html = decodeHtmlResponse(res);
+        const $ = cheerio.load(html);
 
         // DataLab 실시간 검색어 셀렉터
         const selectors = [
@@ -493,8 +543,10 @@ async function crawlNaverNewsTopics() {
               : HEADERS['User-Agent'],
           },
           timeout: 10000,
+          responseType: 'arraybuffer',
         });
-        const $ = cheerio.load(res.data);
+        const html = decodeHtmlResponse(res);
+        const $ = cheerio.load(html);
 
         // 뉴스 랭킹/이슈 키워드 셀렉터
         const selectors = [
@@ -595,8 +647,10 @@ async function crawlSignalBz() {
         const webRes = await axios.get('https://signal.bz/', {
           headers: HEADERS,
           timeout: 10000,
+          responseType: 'arraybuffer',
         });
-        const $ = cheerio.load(webRes.data);
+        const html = decodeHtmlResponse(webRes);
+        const $ = cheerio.load(html);
 
         // 실시간 검색어 리스트에서 추출
         const selectors = [
@@ -673,7 +727,7 @@ function cleanTrailingParticles(text) {
 
 function addSignalKeyword(keywords, seen, text, rank) {
   const cleaned = text.replace(/^\d+\s*/, '').replace(/\s+/g, ' ').trim();
-  if (cleaned && cleaned.length >= 2 && cleaned.length <= 20 && !seen.has(cleaned.toLowerCase())) {
+  if (cleaned && cleaned.length >= 2 && cleaned.length <= 20 && !hasMojibakeText(cleaned) && !seen.has(cleaned.toLowerCase())) {
     seen.add(cleaned.toLowerCase());
     keywords.push({ keyword: cleaned, source: 'signal', rank: rank });
   }
@@ -727,6 +781,7 @@ async function crawlAll() {
 
     if (!cleaned || cleaned.length < 2) continue;
     if (cleaned.length > 20) continue;
+    if (hasMojibakeText(cleaned)) continue;
     if (BLACKLIST.has(cleaned)) continue;
 
     // 키워드 품질 검증
@@ -759,4 +814,5 @@ module.exports = {
   crawlNaverNewsTopics,
   crawlAll,
   isGoodKeyword,
+  hasMojibakeText,
 };
